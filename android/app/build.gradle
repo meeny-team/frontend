@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -84,6 +85,12 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        manifestPlaceholders = [
+            kakaoNativeAppKey: project.env.get("KAKAO_NATIVE_APP_KEY"),
+            kakaoRedirectScheme: "kakao" + project.env.get("KAKAO_NATIVE_APP_KEY")
+        ]
+        resValue "string", "kakao_app_key", project.env.get("KAKAO_NATIVE_APP_KEY")
+        buildConfigField "String", "KAKAO_NATIVE_APP_KEY", "\"${project.env.get("KAKAO_NATIVE_APP_KEY")}\""
     }
     signingConfigs {
         debug {
@@ -110,6 +117,7 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation "com.kakao.sdk:v2-common:2.20.1"
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

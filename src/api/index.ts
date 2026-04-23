@@ -13,6 +13,7 @@ export * from './utils';
 export { apiCall, apiError } from './client';
 
 // APIs
+export * from './auth';
 export * from './user';
 export * from './crew';
 export * from './play';
