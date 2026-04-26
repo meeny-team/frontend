@@ -209,9 +209,17 @@ export default function PlayDetailScreen() {
         {/* Info */}
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>{PLAY_TYPE_LABELS[play.type]}</Text>
+            <Text style={styles.infoLabel}>
+              {play.type === 'etc' && play.tags && play.tags.length > 0
+                ? play.tags[0]
+                : PLAY_TYPE_LABELS[play.type]}
+            </Text>
             <Text style={styles.infoDot}>·</Text>
-            <Text style={styles.infoLabel}>{play.region || '미정'}</Text>
+            <Text style={styles.infoLabel}>
+              {play.regions && play.regions.length > 0
+                ? play.regions.join(', ')
+                : '미정'}
+            </Text>
             <Text style={styles.infoDot}>·</Text>
             <Text style={styles.infoLabel}>
               {formatDateRange(play.dateRange)}

@@ -148,13 +148,19 @@ function PlayCard({ play, onPress }: PlayCardProps) {
           </View>
         )}
         <View style={styles.playTypeBadge}>
-          <Text style={styles.playTypeBadgeText}>{PLAY_TYPE_LABELS[play.type]}</Text>
+          <Text style={styles.playTypeBadgeText}>
+            {play.type === 'etc' && play.tags && play.tags.length > 0
+              ? play.tags[0]
+              : PLAY_TYPE_LABELS[play.type]}
+          </Text>
         </View>
       </View>
       <View style={styles.playInfo}>
         <Text style={styles.playTitle}>{play.title}</Text>
         <Text style={styles.playMeta}>
-          {play.region || '미정'} · {formatDateRange(play.dateRange)}
+          {play.regions && play.regions.length > 0
+            ? play.regions[0] + (play.regions.length > 1 ? ` 외 ${play.regions.length - 1}곳` : '')
+            : '미정'} · {formatDateRange(play.dateRange)}
         </Text>
         <Text style={styles.playAmount}>{formatCurrency(totalAmount)}</Text>
       </View>

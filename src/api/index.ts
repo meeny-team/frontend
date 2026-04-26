@@ -17,6 +17,7 @@ export * from './user';
 export * from './crew';
 export * from './play';
 export * from './pin';
+export * from './region';
 
 // Mock Data (for direct access)
 export { CURRENT_USER, users, crews, plays, pins } from './mock';

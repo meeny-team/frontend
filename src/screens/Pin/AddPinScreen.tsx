@@ -87,7 +87,7 @@ function MapPinIcon() {
   );
 }
 
-const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity'];
+const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity', 'etc'];
 
 interface LocationCoords {
   latitude: number;
@@ -103,14 +103,13 @@ export default function AddPinScreen() {
   const play = getPlayById(playId);
   const crew = play ? getCrewById(play.crewId) : undefined;
   const members = useMemo(() => {
-    if (!crew) return [];
-    return crew.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [crew]);
+    if (!play) return [];
+    return play.members.map(id => getUserById(id)).filter(u => u !== undefined);
+  }, [play]);
 
   // Form state
   const [step, setStep] = useState(1);
   const [category, setCategory] = useState<PinCategory | null>(null);
-  const [customCategory, setCustomCategory] = useState('');
   const [title, setTitle] = useState('');
   const [memo, setMemo] = useState('');
   const [locationName, setLocationName] = useState('');
@@ -299,8 +298,7 @@ export default function AddPinScreen() {
   const canProceed = () => {
     switch (step) {
       case 1:
-        const hasCategory = category !== null || customCategory.trim().length > 0;
-        return hasCategory && title.trim().length > 0;
+        return category !== null && title.trim().length > 0;
       case 2:
         const isSettlementValid = settlementType === 'equal' || customTotal === numericAmount;
         return participantCount > 0 && isSettlementValid;
@@ -319,14 +317,6 @@ export default function AddPinScreen() {
 
   const handleCategorySelect = (cat: PinCategory) => {
     setCategory(cat);
-    setCustomCategory('');
-  };
-
-  const handleCustomCategoryChange = (text: string) => {
-    setCustomCategory(text);
-    if (text.trim().length > 0) {
-      setCategory(null);
-    }
   };
 
   const progressWidth = progressAnim.interpolate({
@@ -388,16 +378,6 @@ export default function AddPinScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-          <View style={[styles.categoryChip, styles.customCategoryChip, customCategory.trim().length > 0 && styles.categoryChipActive]}>
-            <TextInput
-              style={styles.customCategoryChipInput}
-              placeholder="직접 입력"
-              placeholderTextColor={colors.muted}
-              value={customCategory}
-              onChangeText={handleCustomCategoryChange}
-              maxLength={10}
-            />
-          </View>
         </View>
       </ScrollView>
 

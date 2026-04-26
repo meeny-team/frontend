@@ -15,6 +15,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -27,6 +28,9 @@ import {
   getUserById,
   CURRENT_USER,
   createPlay,
+  DOMESTIC_REGIONS,
+  OVERSEAS_REGIONS,
+  RegionGroup,
 } from '../../api';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -84,7 +88,20 @@ export default function CreatePlayScreen() {
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>(crew?.members || []);
-  const [locationName, setLocationName] = useState('');
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [showRegionModal, setShowRegionModal] = useState(false);
+  const [regionTab, setRegionTab] = useState<'domestic' | 'overseas'>('domestic');
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [regionSearchQuery, setRegionSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // 검색 디바운스
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(regionSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [regionSearchQuery]);
 
   // Animation
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -159,7 +176,7 @@ export default function CreatePlayScreen() {
           start: startDate || new Date().toISOString().split('T')[0],
           end: endDate || undefined,
         },
-        region: locationName || undefined,
+        regions: selectedRegions.length > 0 ? selectedRegions : undefined,
         members: selectedMembers,
         tags: customType ? [customType] : undefined,
       });
@@ -167,6 +184,43 @@ export default function CreatePlayScreen() {
     } catch (error) {
       Alert.alert('오류', '플레이 생성에 실패했습니다.');
     }
+  };
+
+  const toggleRegion = (groupLabel: string, region: string) => {
+    // "전체" 선택 시 그룹 라벨만 저장 (예: "서울 성북구")
+    const fullRegion = region === '전체' ? groupLabel : `${groupLabel} ${region}`;
+    setSelectedRegions(prev =>
+      prev.includes(fullRegion)
+        ? prev.filter(r => r !== fullRegion)
+        : [...prev, fullRegion]
+    );
+  };
+
+  const removeRegion = (region: string) => {
+    setSelectedRegions(prev => prev.filter(r => r !== region));
+  };
+
+  // 검색 필터링 로직 (디바운스 적용)
+  const filteredRegions = useMemo(() => {
+    const regions = regionTab === 'domestic' ? DOMESTIC_REGIONS : OVERSEAS_REGIONS;
+    if (!debouncedQuery.trim()) return regions;
+
+    const query = debouncedQuery.toLowerCase();
+    return regions
+      .map(group => ({
+        ...group,
+        regions: group.regions.filter(r =>
+          r.toLowerCase().includes(query) ||
+          group.label.toLowerCase().includes(query)
+        ),
+      }))
+      .filter(group => group.regions.length > 0 || group.label.toLowerCase().includes(query));
+  }, [regionTab, debouncedQuery]);
+
+  // 검색어로 지역 선택 (검색 결과에서 직접 선택)
+  const isRegionSelected = (groupLabel: string, region: string) => {
+    const fullRegion = region === '전체' ? groupLabel : `${groupLabel} ${region}`;
+    return selectedRegions.includes(fullRegion);
   };
 
   const canProceed = () => {
@@ -285,16 +339,41 @@ export default function CreatePlayScreen() {
 
   const renderStep3 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.inputLabel}>위치 (선택)</Text>
-      <TextInput
-        style={styles.locationInput}
-        placeholder="예: 제주도, 강남역, 홍대입구"
-        placeholderTextColor={colors.muted}
-        value={locationName}
-        onChangeText={setLocationName}
-      />
+      <Text style={styles.inputLabel}>지역 선택 (선택)</Text>
+
+      {/* 선택된 지역들 */}
+      {selectedRegions.length > 0 && (
+        <View style={styles.selectedRegionsContainer}>
+          {selectedRegions.map(region => (
+            <TouchableOpacity
+              key={region}
+              style={styles.selectedRegionChip}
+              onPress={() => removeRegion(region)}
+            >
+              <Text style={styles.selectedRegionText}>{region}</Text>
+              <Text style={styles.selectedRegionRemove}>×</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* 지역 추가 버튼 */}
+      <TouchableOpacity
+        style={styles.addRegionButton}
+        onPress={() => {
+          setRegionSearchQuery('');
+          setDebouncedQuery('');
+          setExpandedGroup(null);
+          setShowRegionModal(true);
+        }}
+      >
+        <Text style={styles.addRegionButtonText}>
+          {selectedRegions.length > 0 ? '+ 지역 추가' : '지역 선택하기'}
+        </Text>
+      </TouchableOpacity>
+
       <Text style={styles.locationHint}>
-        플레이가 진행되는 주요 장소를 입력하세요
+        여러 지역을 선택할 수 있어요
       </Text>
     </View>
   );
@@ -397,6 +476,114 @@ export default function CreatePlayScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Region Selection Modal */}
+      <Modal
+        visible={showRegionModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowRegionModal(false)}
+      >
+        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowRegionModal(false)} style={styles.modalCloseBtn}>
+              <XIcon />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>지역 선택</Text>
+            <TouchableOpacity onPress={() => setShowRegionModal(false)} style={styles.modalDoneBtn}>
+              <Text style={styles.modalDoneText}>완료</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Input */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="지역 검색..."
+              placeholderTextColor={colors.muted}
+              value={regionSearchQuery}
+              onChangeText={setRegionSearchQuery}
+              autoCorrect={false}
+            />
+            {regionSearchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearBtn}
+                onPress={() => setRegionSearchQuery('')}
+              >
+                <Text style={styles.searchClearText}>×</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Tab Selector */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tab, regionTab === 'domestic' && styles.tabActive]}
+              onPress={() => setRegionTab('domestic')}
+            >
+              <Text style={[styles.tabText, regionTab === 'domestic' && styles.tabTextActive]}>
+                국내
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, regionTab === 'overseas' && styles.tabActive]}
+              onPress={() => setRegionTab('overseas')}
+            >
+              <Text style={[styles.tabText, regionTab === 'overseas' && styles.tabTextActive]}>
+                해외
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Region List */}
+          <ScrollView style={styles.regionList} showsVerticalScrollIndicator={false}>
+            {filteredRegions.length === 0 ? (
+              <View style={styles.emptySearch}>
+                <Text style={styles.emptySearchText}>검색 결과가 없습니다</Text>
+              </View>
+            ) : (
+              filteredRegions.map((group: RegionGroup) => {
+                const isExpanded = expandedGroup === group.label || debouncedQuery.length > 0;
+                return (
+                  <View key={group.label} style={styles.regionGroup}>
+                    <TouchableOpacity
+                      style={styles.regionGroupHeader}
+                      onPress={() => setExpandedGroup(expandedGroup === group.label ? null : group.label)}
+                    >
+                      <Text style={styles.regionGroupLabel}>{group.label}</Text>
+                      <Text style={styles.regionGroupArrow}>
+                        {isExpanded ? '▼' : '▶'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {isExpanded && (
+                      <View style={styles.regionItems}>
+                        {group.regions.map(region => {
+                          const isSelected = isRegionSelected(group.label, region);
+                          return (
+                            <TouchableOpacity
+                              key={region}
+                              style={[styles.regionItem, isSelected && styles.regionItemSelected]}
+                              onPress={() => toggleRegion(group.label, region)}
+                            >
+                              <Text style={[styles.regionItemText, isSelected && styles.regionItemTextSelected]}>
+                                {region}
+                              </Text>
+                              {isSelected && <CheckIcon color={colors.brand} size={14} />}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                );
+              })
+            )}
+            <View style={{ height: insets.bottom + spacing.xl }} />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -548,20 +735,197 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
 
-  // Step 3: Location
-  locationInput: {
+  // Step 3: Region Selection
+  selectedRegionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  selectedRegionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.brandMuted,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    gap: spacing.xs,
+  },
+  selectedRegionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.brand,
+  },
+  selectedRegionRemove: {
+    fontSize: 16,
+    color: colors.brand,
+    fontWeight: '600',
+  },
+  addRegionButton: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    fontSize: 16,
-    color: colors.foreground,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  addRegionButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: colors.secondary,
   },
   locationHint: {
     fontSize: 13,
     color: colors.muted,
     marginTop: spacing.md,
+  },
+
+  // Region Modal
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalCloseBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  modalDoneBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalDoneText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.brand,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    fontSize: 15,
+    color: colors.foreground,
+  },
+  searchClearBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  searchClearText: {
+    fontSize: 20,
+    color: colors.muted,
+    fontWeight: '600',
+  },
+  emptySearch: {
+    paddingVertical: spacing['2xl'],
+    alignItems: 'center',
+  },
+  emptySearchText: {
+    fontSize: 15,
+    color: colors.muted,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  tabActive: {
+    backgroundColor: colors.brand,
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.secondary,
+  },
+  tabTextActive: {
+    color: colors.foreground,
+  },
+  regionList: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  regionGroup: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  regionGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.lg,
+  },
+  regionGroupLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  regionGroupArrow: {
+    fontSize: 12,
+    color: colors.muted,
+  },
+  regionItems: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  regionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.xs,
+  },
+  regionItemSelected: {
+    backgroundColor: colors.brandMuted,
+    borderColor: colors.brand,
+  },
+  regionItemText: {
+    fontSize: 14,
+    color: colors.secondary,
+  },
+  regionItemTextSelected: {
+    color: colors.brand,
+    fontWeight: '500',
   },
 
   // Step 4: Members
