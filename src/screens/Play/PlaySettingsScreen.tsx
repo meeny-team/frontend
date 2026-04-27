@@ -22,7 +22,9 @@ import {
   getCrewById,
   getUserById,
   PLAY_TYPE_LABELS,
-  REGIONS,
+  DOMESTIC_REGIONS,
+  OVERSEAS_REGIONS,
+  RegionGroup,
   PlayType,
   CURRENT_USER,
 } from '../../api';
@@ -90,10 +92,24 @@ export default function PlaySettingsScreen() {
 
   const [title, setTitle] = useState(play?.title || '');
   const [type, setType] = useState<PlayType>(play?.type || 'travel');
-  const [region, setRegion] = useState(play?.region || '');
+  const [selectedRegions, setSelectedRegions] = useState<string[]>(play?.regions || []);
   const [tags, setTags] = useState<string[]>(play?.tags || []);
   const [newTag, setNewTag] = useState('');
   const [selectedMembers, setSelectedMembers] = useState<string[]>(play?.members || []);
+
+  const toggleRegion = (groupLabel: string, region: string) => {
+    // "전체" 선택 시 그룹 라벨만 저장 (예: "서울 성북구")
+    const fullRegion = region === '전체' ? groupLabel : `${groupLabel} ${region}`;
+    setSelectedRegions(prev =>
+      prev.includes(fullRegion)
+        ? prev.filter(r => r !== fullRegion)
+        : [...prev, fullRegion]
+    );
+  };
+
+  const removeRegion = (region: string) => {
+    setSelectedRegions(prev => prev.filter(r => r !== region));
+  };
 
   if (!play || !crew) {
     return (
@@ -200,19 +216,40 @@ export default function PlaySettingsScreen() {
         {/* Region */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>지역</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.regionRow}>
-              {REGIONS.filter(r => r !== '전체').map(r => (
+          {selectedRegions.length > 0 && (
+            <View style={styles.selectedRegionsContainer}>
+              {selectedRegions.map(region => (
                 <TouchableOpacity
-                  key={r}
-                  style={[styles.regionChip, region === r && styles.regionChipActive]}
-                  onPress={() => setRegion(region === r ? '' : r)}
+                  key={region}
+                  style={styles.selectedRegionChip}
+                  onPress={() => removeRegion(region)}
                 >
-                  <Text style={[styles.regionText, region === r && styles.regionTextActive]}>
-                    {r}
-                  </Text>
+                  <Text style={styles.selectedRegionText}>{region}</Text>
+                  <Text style={styles.selectedRegionRemove}>×</Text>
                 </TouchableOpacity>
               ))}
+            </View>
+          )}
+          {/* 주요 지역 빠른 선택 */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.regionRow}>
+              {DOMESTIC_REGIONS.slice(0, 5).flatMap((group: RegionGroup) =>
+                group.regions.filter(r => r !== '전체').slice(0, 3).map(r => {
+                  const fullRegion = `${group.label} ${r}`;
+                  const isSelected = selectedRegions.includes(fullRegion);
+                  return (
+                    <TouchableOpacity
+                      key={fullRegion}
+                      style={[styles.regionChip, isSelected && styles.regionChipActive]}
+                      onPress={() => toggleRegion(group.label, r)}
+                    >
+                      <Text style={[styles.regionText, isSelected && styles.regionTextActive]}>
+                        {r}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </View>
           </ScrollView>
         </View>
@@ -390,6 +427,31 @@ const styles = StyleSheet.create({
   },
   typeTextActive: {
     color: colors.foreground,
+  },
+  selectedRegionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  selectedRegionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.brandMuted,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    gap: spacing.xs,
+  },
+  selectedRegionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.brand,
+  },
+  selectedRegionRemove: {
+    fontSize: 14,
+    color: colors.brand,
+    fontWeight: '600',
   },
   regionRow: {
     flexDirection: 'row',

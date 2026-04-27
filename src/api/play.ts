@@ -27,7 +27,7 @@ export async function createPlay(request: CreatePlayRequest): Promise<ApiRespons
     title: request.title,
     type: request.type,
     dateRange: request.dateRange,
-    region: request.region,
+    regions: request.regions,
     coverImage: request.coverImage,
     members: request.members,
     tags: request.tags,
@@ -50,7 +50,7 @@ export async function updatePlay(playId: string, request: Partial<CreatePlayRequ
   if (request.title) play.title = request.title;
   if (request.type) play.type = request.type;
   if (request.dateRange) play.dateRange = request.dateRange;
-  if (request.region !== undefined) play.region = request.region;
+  if (request.regions !== undefined) play.regions = request.regions;
   if (request.coverImage !== undefined) play.coverImage = request.coverImage;
   if (request.members) play.members = request.members;
   if (request.tags !== undefined) play.tags = request.tags;
