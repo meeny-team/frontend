@@ -30,5 +30,14 @@ target 'MeenyApp' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # react-native-config: .env 변수를 xcconfig에 주입
+    installer.aggregate_targets.each do |target|
+      target.xcconfigs.each do |config_name, config_file|
+        rn_config = '../node_modules/react-native-config/ios/ReactNativeConfig.xcconfig'
+        config_file.includes << rn_config unless config_file.includes.include?(rn_config)
+        config_file.save_as(target.xcconfig_path(config_name))
+      end
+    end
   end
 end

@@ -40,7 +40,7 @@ function ArrowRightIcon() {
 }
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { loginWithKakao } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -64,17 +64,17 @@ export default function LoginScreen() {
 
         {/* Login Buttons */}
         <View style={styles.buttonSection}>
-          <TouchableOpacity style={styles.kakaoButton} onPress={login} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.kakaoButton} onPress={loginWithKakao} activeOpacity={0.8}>
             <KakaoIcon />
             <Text style={styles.kakaoButtonText}>카카오로 시작하기</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.appleButton} onPress={login} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.appleButton} onPress={loginWithKakao} activeOpacity={0.8}>
             <AppleIcon />
             <Text style={styles.appleButtonText}>Apple로 시작하기</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.guestButton} onPress={login} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.guestButton} onPress={loginWithKakao} activeOpacity={0.7}>
             <Text style={styles.guestButtonText}>둘러보기</Text>
             <ArrowRightIcon />
           </TouchableOpacity>

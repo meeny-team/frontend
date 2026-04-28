@@ -1,17 +1,20 @@
-/**
- * Meeny - Auth Context (Mocked)
- * 소셜 로그인은 디자인만 - 버튼 클릭시 바로 로그인 처리
- */
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { CURRENT_USER, User } from '../api';
+import { Alert } from 'react-native';
+import { login as kakaoLogin, logout as kakaoLogout } from '@react-native-seoul/kakao-login';
+import { User } from '../api';
+import { socialLogin, logoutBackend, refreshAccessToken } from '../api/auth';
+import { fetchMe, updateMe, withdrawMe } from '../api/user';
+import { UpdateUserRequest } from '../api/schema';
+import { getToken, clearTokens, configureAuthBridge } from '../api/client';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: () => void;
-  logout: () => void;
+  loginWithKakao: () => Promise<void>;
+  logout: () => Promise<void>;
+  updateProfile: (request: UpdateUserRequest) => Promise<User>;
+  withdraw: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,22 +24,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate checking auth state
-    const checkAuth = async () => {
-      // For now, user is not logged in initially
-      setIsLoading(false);
-    };
-    checkAuth();
+    configureAuthBridge({
+      refresh: async () => {
+        const tokens = await refreshAccessToken();
+        return tokens?.accessToken ?? null;
+      },
+      onFailure: () => setUser(null),
+    });
+    restoreSession();
   }, []);
 
-  const login = () => {
-    // Mock login - immediately set user
-    setUser(CURRENT_USER);
-  };
+  async function restoreSession() {
+    try {
+      const token = await getToken();
+      if (token) {
+        const me = await fetchMe();
+        setUser(me);
+      }
+    } catch {
+      await clearTokens();
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
-  const logout = () => {
+  async function loginWithKakao() {
+    try {
+      const { accessToken } = await kakaoLogin();
+      await socialLogin({ provider: 'KAKAO', token: accessToken });
+      const me = await fetchMe();
+      setUser(me);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('cancelled') || msg.includes('cancel')) return;
+      console.error('[loginWithKakao] error:', e);
+      Alert.alert('로그인 실패', msg);
+    }
+  }
+
+  async function updateProfile(request: UpdateUserRequest): Promise<User> {
+    const updated = await updateMe(request);
+    setUser(updated);
+    return updated;
+  }
+
+  async function logout() {
+    await logoutBackend();
+    try {
+      await kakaoLogout();
+    } catch {}
+    await clearTokens();
     setUser(null);
-  };
+  }
+
+  async function withdraw() {
+    await withdrawMe();
+    try {
+      await kakaoLogout();
+    } catch {}
+    await clearTokens();
+    setUser(null);
+  }
 
   return (
     <AuthContext.Provider
@@ -44,8 +92,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
-        login,
+        loginWithKakao,
         logout,
+        updateProfile,
+        withdraw,
       }}
     >
       {children}

@@ -20,7 +20,8 @@ import { useNavigation } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { CURRENT_USER } from '../../api';
+import { useAuth } from '../../auth/Auth';
+import { ApiError } from '../../api/client';
 
 // ============ Icons ============
 
@@ -60,10 +61,12 @@ const imageStyles = StyleSheet.create({
 export default function ProfileEditScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const { user, updateProfile } = useAuth();
 
-  const [nickname, setNickname] = useState(CURRENT_USER.nickname);
-  const [bio, setBio] = useState(CURRENT_USER.bio || '');
-  const [imageUri, setImageUri] = useState<string | null>(CURRENT_USER.profileImage || null);
+  const [nickname, setNickname] = useState(user?.nickname ?? '');
+  const [bio, setBio] = useState(user?.bio ?? '');
+  const [imageUri, setImageUri] = useState<string | null>(user?.profileImage ?? null);
+  const [saving, setSaving] = useState(false);
 
   const handlePickImage = useCallback(() => {
     Keyboard.dismiss();
@@ -95,14 +98,27 @@ export default function ProfileEditScreen() {
     });
   }, []);
 
-  const handleSave = () => {
-    // In real app, would save profile
-    navigation.goBack();
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateProfile({
+        nickname,
+        bio,
+        profileImage: imageUri ?? '',
+      });
+      navigation.goBack();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : '프로필 저장에 실패했습니다.';
+      Alert.alert('저장 실패', msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const hasChanges = nickname !== CURRENT_USER.nickname ||
-    bio !== (CURRENT_USER.bio || '') ||
-    imageUri !== (CURRENT_USER.profileImage || null);
+  const hasChanges = nickname !== (user?.nickname ?? '') ||
+    bio !== (user?.bio ?? '') ||
+    imageUri !== (user?.profileImage ?? null);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -113,11 +129,13 @@ export default function ProfileEditScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>프로필 수정</Text>
         <TouchableOpacity
-          style={[styles.saveButton, !hasChanges && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!hasChanges || saving) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!hasChanges}
+          disabled={!hasChanges || saving}
         >
-          <Text style={[styles.saveText, !hasChanges && styles.saveTextDisabled]}>저장</Text>
+          <Text style={[styles.saveText, (!hasChanges || saving) && styles.saveTextDisabled]}>
+            {saving ? '저장중...' : '저장'}
+          </Text>
         </TouchableOpacity>
       </View>
 
