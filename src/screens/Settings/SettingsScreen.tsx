@@ -16,7 +16,6 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { CURRENT_USER } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -45,7 +44,8 @@ function ChevronRightIcon({ size = 16, color = colors.muted }: { size?: number; 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const nickname = user?.nickname ?? '게스트';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -70,10 +70,10 @@ export default function SettingsScreen() {
           activeOpacity={0.6}
         >
           <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{CURRENT_USER.nickname[0]}</Text>
+            <Text style={styles.profileAvatarText}>{nickname[0] ?? '?'}</Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{CURRENT_USER.nickname}</Text>
+            <Text style={styles.profileName}>{nickname}</Text>
             <Text style={styles.profileSub}>프로필 수정</Text>
           </View>
           <ChevronRightIcon />

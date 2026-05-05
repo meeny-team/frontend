@@ -27,11 +27,11 @@ import {
   formatDate,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
-  CURRENT_USER,
   Pin,
   User,
   DUMMY_PINS,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PinDetail'>;
@@ -64,6 +64,9 @@ export default function PinDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { pinId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number 라 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
   const pin = getPinById(pinId);
   const author = pin ? getUserById(pin.authorId) : undefined;
@@ -178,7 +181,7 @@ export default function PinDetailScreen() {
                   </View>
                   <Text style={styles.payerInfoName}>
                     {getDisplayName(pin.settlement.paidBy)}
-                    {pin.settlement.paidBy === CURRENT_USER.id && ' (나)'}
+                    {pin.settlement.paidBy === myId && ' (나)'}
                   </Text>
                   <Text style={styles.payerInfoAmount}>{formatCurrency(pin.amount)}</Text>
                 </View>
@@ -190,7 +193,7 @@ export default function PinDetailScreen() {
                   {pin.settlement.type === 'equal' ? '1/N' : '커스텀'} · {pin.settlement.splits?.length || 0}명
                 </Text>
                 {pin.settlement.splits?.map(split => {
-                  const isCurrentUser = split.userId === CURRENT_USER.id;
+                  const isCurrentUser = split.userId === myId;
                   const isPayer = split.userId === pin.settlement.paidBy;
                   return (
                     <View key={split.userId} style={styles.splitItem}>

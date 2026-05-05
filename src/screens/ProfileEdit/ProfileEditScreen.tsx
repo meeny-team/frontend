@@ -20,7 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { CURRENT_USER } from '../../api';
+import { useAuth } from '../../auth/Auth';
 
 // ============ Icons ============
 
@@ -60,10 +60,15 @@ const imageStyles = StyleSheet.create({
 export default function ProfileEditScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const { user } = useAuth();
 
-  const [nickname, setNickname] = useState(CURRENT_USER.nickname);
-  const [bio, setBio] = useState(CURRENT_USER.bio || '');
-  const [imageUri, setImageUri] = useState<string | null>(CURRENT_USER.profileImage || null);
+  const initialNickname = user?.nickname ?? '';
+  const initialBio = user?.bio ?? '';
+  const initialImage = user?.profileImage ?? null;
+
+  const [nickname, setNickname] = useState(initialNickname);
+  const [bio, setBio] = useState(initialBio);
+  const [imageUri, setImageUri] = useState<string | null>(initialImage);
 
   const handlePickImage = useCallback(() => {
     Keyboard.dismiss();
@@ -100,9 +105,9 @@ export default function ProfileEditScreen() {
     navigation.goBack();
   };
 
-  const hasChanges = nickname !== CURRENT_USER.nickname ||
-    bio !== (CURRENT_USER.bio || '') ||
-    imageUri !== (CURRENT_USER.profileImage || null);
+  const hasChanges = nickname !== initialNickname ||
+    bio !== initialBio ||
+    imageUri !== initialImage;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

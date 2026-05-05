@@ -24,8 +24,8 @@ import {
   PLAY_TYPE_LABELS,
   REGIONS,
   PlayType,
-  CURRENT_USER,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PlaySettings'>;
@@ -80,6 +80,9 @@ export default function PlaySettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
   const play = getPlayById(playId);
   const crew = play ? getCrewById(play.crewId) : undefined;
@@ -104,7 +107,7 @@ export default function PlaySettingsScreen() {
   }
 
   const toggleMember = (memberId: string) => {
-    if (memberId === CURRENT_USER.id) return;
+    if (memberId === myId) return;
     setSelectedMembers(prev =>
       prev.includes(memberId)
         ? prev.filter(id => id !== memberId)
@@ -256,7 +259,7 @@ export default function PlaySettingsScreen() {
             {crewMembers.map(member => {
               if (!member) return null;
               const isSelected = selectedMembers.includes(member.id);
-              const isCurrentUser = member.id === CURRENT_USER.id;
+              const isCurrentUser = member.id === myId;
               return (
                 <TouchableOpacity
                   key={member.id}

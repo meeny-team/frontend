@@ -24,11 +24,11 @@ import {
   getPlayTotalAmount,
   getPlayAverageAmount,
   formatCurrency,
-  CURRENT_USER,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'Settlement'>;
@@ -115,6 +115,9 @@ export default function SettlementScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
   const play = getPlayById(playId);
   const crew = play ? getCrewById(play.crewId) : undefined;
@@ -434,8 +437,8 @@ export default function SettlementScreen() {
                         const fromUser = getUserById(settlement.from);
                         const toUser = getUserById(settlement.to);
                         const state = getSettlementState(settlement.pinId, settlement.from, settlement.to);
-                        const isFromMe = settlement.from === CURRENT_USER.id;
-                        const isToMe = settlement.to === CURRENT_USER.id;
+                        const isFromMe = settlement.from === myId;
+                        const isToMe = settlement.to === myId;
 
                         return (
                           <View key={idx} style={styles.settlementItem}>
