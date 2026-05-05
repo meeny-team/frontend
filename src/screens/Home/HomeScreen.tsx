@@ -22,7 +22,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import {
-  CURRENT_USER,
   Crew,
   formatCurrency,
   fetchMyCrews,
@@ -30,6 +29,7 @@ import {
   getPlaysByCrewId,
   getPlayTotalAmount,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
@@ -261,6 +261,7 @@ const SmallCrewCard = memo(({ crew, onPress }: SmallCrewCardProps) => {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const { user } = useAuth();
 
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -306,7 +307,7 @@ export default function HomeScreen() {
 
         {/* Greeting */}
         <View style={styles.greetingSection}>
-          <Text style={styles.greetingBig}>안녕! {CURRENT_USER.nickname}</Text>
+          <Text style={styles.greetingBig}>안녕! {user?.nickname ?? '게스트'}</Text>
           <Text style={styles.greetingSub}>오늘도 즐거운 하루 보내세요</Text>
         </View>
 

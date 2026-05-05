@@ -32,10 +32,10 @@ import {
   PLAY_TYPE_LABELS,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
-  CURRENT_USER,
   Pin,
   User,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
@@ -152,6 +152,9 @@ export default function PlayDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
@@ -163,7 +166,7 @@ export default function PlayDetailScreen() {
   const playMembers = getPlayMembers(playId);
 
   // Check if current user is a member of this crew
-  const isMember = crew?.members.includes(CURRENT_USER.id) ?? false;
+  const isMember = !!myId && (crew?.members.includes(myId) ?? false);
 
   if (!play) {
     return (

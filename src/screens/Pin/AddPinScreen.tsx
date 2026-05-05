@@ -31,10 +31,10 @@ import {
   getUserById,
   CATEGORY_LABELS,
   PinCategory,
-  CURRENT_USER,
   createPin,
 } from '../../api';
 import { searchPlaces, KakaoPlace } from '../../api/kakao';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'AddPin'>;
@@ -99,6 +99,9 @@ export default function AddPinScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : '';
 
   const play = getPlayById(playId);
   const crew = play ? getCrewById(play.crewId) : undefined;
@@ -117,7 +120,7 @@ export default function AddPinScreen() {
   const [locationCoords, setLocationCoords] = useState<LocationCoords | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<KakaoPlace | null>(null);
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState<string>(CURRENT_USER.id);
+  const [paidBy, setPaidBy] = useState<string>(myId);
   const [participants, setParticipants] = useState<Set<string>>(
     new Set(members.map(m => m?.id).filter(Boolean) as string[])
   );
@@ -529,7 +532,7 @@ export default function AddPinScreen() {
                 </View>
                 <Text style={[styles.payerName, isSelected && styles.payerNameActive]}>
                   {member.nickname}
-                  {member.id === CURRENT_USER.id && ' (나)'}
+                  {member.id === myId && ' (나)'}
                 </Text>
               </TouchableOpacity>
             );
@@ -559,7 +562,7 @@ export default function AddPinScreen() {
               </View>
               <Text style={[styles.participantName, isSelected && styles.participantNameActive]}>
                 {member.nickname}
-                {member.id === CURRENT_USER.id && ' (나)'}
+                {member.id === myId && ' (나)'}
               </Text>
             </TouchableOpacity>
           );
@@ -594,7 +597,7 @@ export default function AddPinScreen() {
         {selectedParticipants.map(member => {
           if (!member) return null;
           const isPayer = member.id === paidBy;
-          const isCurrentUser = member.id === CURRENT_USER.id;
+          const isCurrentUser = member.id === myId;
 
           return (
             <View key={member.id} style={styles.splitRow}>
