@@ -64,11 +64,15 @@ function ArrowRightIcon() {
 }
 
 export default function LoginScreen() {
-  const { loginWithGoogle, loginAsGuest } = useAuth();
+  const { loginWithGoogle, loginWithKakao, loginAsGuest } = useAuth();
 
   const handleGoogle = () => {
     // 실패는 AuthProvider 가 console 로 남김. UI 토스트는 추후.
     loginWithGoogle().catch(() => undefined);
+  };
+
+  const handleKakao = () => {
+    loginWithKakao().catch(() => undefined);
   };
 
   return (
@@ -98,7 +102,7 @@ export default function LoginScreen() {
             <Text style={styles.googleButtonText}>Google로 시작하기</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.kakaoButton} onPress={loginAsGuest} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.kakaoButton} onPress={handleKakao} activeOpacity={0.8}>
             <KakaoIcon />
             <Text style={styles.kakaoButtonText}>카카오로 시작하기</Text>
           </TouchableOpacity>

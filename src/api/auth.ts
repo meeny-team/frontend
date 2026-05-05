@@ -36,11 +36,18 @@ export class AuthApiError extends Error {
   }
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  init: { method: 'GET' | 'POST'; body?: unknown; accessToken?: string },
+): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (init.accessToken) {
+    headers.Authorization = `Bearer ${init.accessToken}`;
+  }
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method: init.method,
+    headers,
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 
   // 본문이 비어있을 수도 있음(204 등). 안전하게 텍스트로 받은 뒤 JSON 파싱.
@@ -65,13 +72,31 @@ export async function socialLogin(
   token: string,
   nickname?: string,
 ): Promise<TokenResponse> {
-  return postJson<TokenResponse>('/api/auth/social', { provider, token, nickname });
+  return request<TokenResponse>('/api/auth/social', {
+    method: 'POST',
+    body: { provider, token, nickname },
+  });
 }
 
 export async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
-  return postJson<TokenResponse>('/api/auth/refresh', { refreshToken });
+  return request<TokenResponse>('/api/auth/refresh', {
+    method: 'POST',
+    body: { refreshToken },
+  });
 }
 
 export async function logout(refreshToken: string): Promise<void> {
-  await postJson<void>('/api/auth/logout', { refreshToken });
+  await request<void>('/api/auth/logout', { method: 'POST', body: { refreshToken } });
+}
+
+export interface MemberProfile {
+  id: number;
+  nickname: string;
+  email: string | null;
+  profileImage: string | null;
+  bio: string | null;
+}
+
+export async function fetchMe(accessToken: string): Promise<MemberProfile> {
+  return request<MemberProfile>('/api/users/me', { method: 'GET', accessToken });
 }

@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">MeenyApp</string>
+    <!-- 카카오 SDK가 KakaoSDK.init() 시 읽는 네이티브 앱 키. 형식: "kakao" + {네이티브 앱 키} -->
+    <string name="kakao_app_key">kakao4d40392ebab5c4c6c28a02ea8461ec2b</string>
 </resources>

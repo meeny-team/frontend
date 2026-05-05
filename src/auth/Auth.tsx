@@ -1,25 +1,38 @@
 /**
  * Meeny - Auth Context
  *
- * 현재 단계:
- *  - Google 로그인은 백엔드와 실제 연결됨 (POST /api/auth/social).
- *  - 카카오/애플은 미구현 → loginAsGuest 로 임시 진입.
- *  - 토큰은 메모리에만 보관. 영속화/refresh 흐름은 후속 작업.
- *  - 로그인 성공 후 사용자 정보는 일단 CURRENT_USER mock 으로 채움
- *    (백엔드 /api/me 가 생기면 교체).
+ * 흐름:
+ *  - 부팅 시 AsyncStorage 의 토큰을 복원하고 GET /api/users/me 로 사용자 정보를 채움
+ *    (만료/무효 토큰이면 저장소를 비우고 로그아웃 상태로 시작)
+ *  - 로그인 성공: 토큰을 메모리 + AsyncStorage 에 저장, fetchMe 로 user 채움
+ *  - 로그아웃: 백엔드 호출 + 카카오/구글 세션 종료 + AsyncStorage 초기화
+ *
+ * 카카오/애플:
+ *  - 카카오: native SDK 로 access token 획득 → 백엔드에 그대로 전달
+ *  - 애플: iOS 빌드 시점에 추가 (지금은 loginAsGuest 로 임시 진입)
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { login as kakaoLogin, logout as kakaoLogout } from '@react-native-seoul/kakao-login';
 import { CURRENT_USER, User } from '../api';
-import { socialLogin, logout as apiLogout, AuthApiError, TokenResponse } from '../api/auth';
+import {
+  socialLogin,
+  fetchMe,
+  logout as apiLogout,
+  AuthApiError,
+  TokenResponse,
+  MemberProfile,
+} from '../api/auth';
+import { saveTokens, loadTokens, clearTokens } from './tokenStorage';
 
 interface AuthContextType {
-  user: User | null;
+  user: MemberProfile | User | null;
   tokens: TokenResponse | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   loginWithGoogle: () => Promise<void>;
+  loginWithKakao: () => Promise<void>;
   loginAsGuest: () => void;
   logout: () => Promise<void>;
 }
@@ -27,41 +40,57 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<MemberProfile | User | null>(null);
   const [tokens, setTokens] = useState<TokenResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // 앱 시작 시 저장된 토큰으로 자동 복원
   useEffect(() => {
-    // 영속 저장소(AsyncStorage 등) 도입 전이라 시작 시 항상 로그아웃 상태.
-    setIsLoading(false);
+    (async () => {
+      const stored = await loadTokens();
+      if (stored) {
+        try {
+          const me = await fetchMe(stored.accessToken);
+          setTokens(stored);
+          setUser(me);
+        } catch {
+          // 만료/무효 토큰 → 깨끗하게 비우고 로그아웃 상태로 시작
+          await clearTokens();
+        }
+      }
+      setIsLoading(false);
+    })();
   }, []);
+
+  // 백엔드에서 새 토큰을 받은 직후의 공통 후처리:
+  // 토큰 영속화 + 사용자 프로필 호출까지 묶어 한 호출자에서 다 처리한다.
+  const completeLogin = async (issued: TokenResponse) => {
+    const me = await fetchMe(issued.accessToken);
+    await saveTokens(issued);
+    setTokens(issued);
+    setUser(me);
+  };
 
   const loginWithGoogle = async () => {
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       const result = await GoogleSignin.signIn();
-
-      // SDK 16+ 는 { type, data } 형태 — 사용자가 취소하면 type !== 'success'
       const idToken =
-        // @ts-expect-error 16.x 와 그 미만 버전 모두 지원하기 위해 두 형태 모두 허용
+        // @ts-expect-error 16.x({type,data}) 와 그 미만 버전 모두 지원하기 위해 두 형태 허용
         result?.data?.idToken ?? result?.idToken;
       if (!idToken) {
         throw new Error('Google ID token 을 받지 못했습니다.');
       }
-
       const issued = await socialLogin('GOOGLE', idToken);
-      setTokens(issued);
-      setUser(CURRENT_USER);
+      await completeLogin(issued);
     } catch (err) {
-      // 사용자 취소는 조용히 무시
       if (
         (err as { code?: string })?.code === statusCodes.SIGN_IN_CANCELLED ||
         (err as { code?: string })?.code === statusCodes.IN_PROGRESS
       ) {
-        return;
+        return; // 사용자 취소는 조용히 무시
       }
       if (err instanceof AuthApiError) {
-        // 백엔드가 거절한 경우 — 토큰 형식/만료/audience 검증 실패 등
         console.warn('[auth] backend rejected:', err.code, err.message);
       } else {
         console.warn('[auth] google sign-in failed:', err);
@@ -70,8 +99,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithKakao = async () => {
+    try {
+      const kakao = await kakaoLogin();
+      // 백엔드는 kakao access token 으로 카카오 API(/v2/user/me) 를 직접 호출해 사용자 정보를 가져온다.
+      const issued = await socialLogin('KAKAO', kakao.accessToken);
+      await completeLogin(issued);
+    } catch (err) {
+      const msg = (err as { message?: string })?.message ?? '';
+      // 카카오 SDK 가 사용자 취소 시 던지는 에러는 메시지로만 식별 가능 (전용 코드 없음)
+      if (msg.includes('user cancelled') || msg.includes('canceled')) {
+        return;
+      }
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] kakao sign-in failed:', err);
+      }
+      throw err;
+    }
+  };
+
   const loginAsGuest = () => {
-    // 카카오/애플 미구현 + "둘러보기" 모두 일단 mock 사용자로 들어가게 함.
+    // 애플 미구현 + "둘러보기" 임시 진입용. 실제 백엔드 호출 없이 mock 사용자로 진입.
     setUser(CURRENT_USER);
   };
 
@@ -81,14 +131,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await apiLogout(tokens.refreshToken);
       }
     } catch (err) {
-      // 로그아웃 호출 실패는 무시 — 어쨌든 로컬 상태는 비운다.
       console.warn('[auth] logout call failed:', err);
     }
     try {
       await GoogleSignin.signOut();
     } catch {
-      // Google 세션이 없을 수도 있음
+      /* 세션이 없을 수도 있음 */
     }
+    try {
+      await kakaoLogout();
+    } catch {
+      /* 세션이 없을 수도 있음 */
+    }
+    await clearTokens();
     setUser(null);
     setTokens(null);
   };
@@ -101,6 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         loginWithGoogle,
+        loginWithKakao,
         loginAsGuest,
         logout,
       }}
