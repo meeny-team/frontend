@@ -23,11 +23,12 @@ import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import {
   Crew,
+  Play,
   formatCurrency,
   fetchMyCrews,
   joinCrewByCode,
-  getPlaysByCrewId,
-  getPlayTotalAmount,
+  fetchPlaysByCrewId,
+  fetchPlayTotalAmount,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -145,12 +146,11 @@ const JoinModal = memo(({ visible, onClose, onJoinSuccess }: JoinModalProps) => 
 
 interface HeroCrewCardProps {
   crew: Crew;
+  totalAmount: number;
   onPress: () => void;
 }
 
-const HeroCrewCard = memo(({ crew, onPress }: HeroCrewCardProps) => {
-  const plays = getPlaysByCrewId(crew.id);
-  const totalAmount = plays.reduce((sum, play) => sum + getPlayTotalAmount(play.id), 0);
+const HeroCrewCard = memo(({ crew, totalAmount, onPress }: HeroCrewCardProps) => {
   const hasImage = crew.coverImage && crew.coverImage.length > 0;
 
   const content = (
@@ -206,11 +206,11 @@ const HeroCrewCard = memo(({ crew, onPress }: HeroCrewCardProps) => {
 
 interface SmallCrewCardProps {
   crew: Crew;
+  playCount: number;
   onPress: () => void;
 }
 
-const SmallCrewCard = memo(({ crew, onPress }: SmallCrewCardProps) => {
-  const plays = getPlaysByCrewId(crew.id);
+const SmallCrewCard = memo(({ crew, playCount, onPress }: SmallCrewCardProps) => {
   const hasImage = crew.coverImage && crew.coverImage.length > 0;
 
   const content = (
@@ -222,7 +222,7 @@ const SmallCrewCard = memo(({ crew, onPress }: SmallCrewCardProps) => {
             {crew.name}
           </Text>
           <Text style={[styles.smallMeta, hasImage && styles.textLightMuted]}>
-            {crew.members.length}명 · {plays.length}개
+            {crew.members.length}명 · {playCount}개
           </Text>
         </View>
       </View>
@@ -266,15 +266,33 @@ export default function HomeScreen() {
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [myCrews, setMyCrews] = useState<Crew[]>([]);
+  // crewId → { plays: 그 크루의 플레이 수, totalAmount: 모든 플레이의 결제액 합 }
+  // 카드가 카드 안에서 직접 비동기 호출하면 N+1 폭증 — 부모에서 한 번에 모아 prop 으로 전달.
+  const [crewExtras, setCrewExtras] = useState<Record<string, { playCount: number; totalAmount: number }>>({});
 
   const loadCrews = useCallback(async () => {
     try {
       const response = await fetchMyCrews();
-      if (response.status === 200) {
-        setMyCrews(response.data);
-      }
+      if (response.status !== 200) return;
+
+      const crews = response.data;
+      setMyCrews(crews);
+
+      // 각 크루별로 plays 목록 → 각 play 의 totalAmount 합산. 동시에 진행.
+      const extrasEntries = await Promise.all(
+        crews.map(async (crew): Promise<[string, { playCount: number; totalAmount: number }]> => {
+          const playsRes = await fetchPlaysByCrewId(crew.id);
+          const plays: Play[] = playsRes.data;
+          const totals = await Promise.all(
+            plays.map(p => fetchPlayTotalAmount(p.id).then(r => r.data)),
+          );
+          const totalAmount = totals.reduce((sum, v) => sum + v, 0);
+          return [crew.id, { playCount: plays.length, totalAmount }];
+        }),
+      );
+      setCrewExtras(Object.fromEntries(extrasEntries));
     } catch (error) {
-      console.error('Failed to load crews:', error);
+      console.warn('Failed to load home data:', error);
     }
   }, []);
 
@@ -365,6 +383,7 @@ export default function HomeScreen() {
               {heroCrew && (
                 <HeroCrewCard
                   crew={heroCrew}
+                  totalAmount={crewExtras[heroCrew.id]?.totalAmount ?? 0}
                   onPress={() => navigation.navigate('CrewDetail', { crewId: heroCrew.id })}
                 />
               )}
@@ -375,6 +394,7 @@ export default function HomeScreen() {
                     <SmallCrewCard
                       key={crew.id}
                       crew={crew}
+                      playCount={crewExtras[crew.id]?.playCount ?? 0}
                       onPress={() => navigation.navigate('CrewDetail', { crewId: crew.id })}
                     />
                   ))}
