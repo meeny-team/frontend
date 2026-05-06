@@ -1,15 +1,13 @@
 /**
  * Meeny - Auth Context
  *
- * 흐름:
- *  - 부팅 시 AsyncStorage 의 토큰을 복원하고 GET /api/users/me 로 사용자 정보를 채움
- *    (만료/무효 토큰이면 저장소를 비우고 로그아웃 상태로 시작)
- *  - 로그인 성공: 토큰을 메모리 + AsyncStorage 에 저장, fetchMe 로 user 채움
- *  - 로그아웃: 백엔드 호출 + 카카오/구글 세션 종료 + AsyncStorage 초기화
+ *  - 부팅: session 에서 토큰 복원 → fetchMe 로 사용자 정보 채움. 만료/무효 토큰이면
+ *    request() 가 자동 refresh 를 시도하고, 그것마저 실패하면 onSessionExpired 가
+ *    호출되어 user state 가 비워짐.
+ *  - 로그인 성공: session 에 토큰 저장 → fetchMe 로 사용자 정보 채움
+ *  - 로그아웃: 백엔드에 refresh 토큰 무효화 호출 + 카카오/구글 세션 종료 + session clear
  *
- * 카카오/애플:
- *  - 카카오: native SDK 로 access token 획득 → 백엔드에 그대로 전달
- *  - 애플: iOS 빌드 시점에 추가 (지금은 loginAsGuest 로 임시 진입)
+ * 토큰 자체는 session 모듈이 single source of truth. 이 컴포넌트는 user/loading 만 보유.
  */
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -21,14 +19,19 @@ import {
   fetchMe,
   logout as apiLogout,
   AuthApiError,
-  TokenResponse,
   MemberProfile,
+  TokenResponse,
 } from '../api/auth';
-import { saveTokens, loadTokens, clearTokens } from './tokenStorage';
+import {
+  loadFromStorage,
+  saveTokens,
+  clearSession,
+  getRefreshToken,
+  setOnSessionExpired,
+} from './session';
 
 interface AuthContextType {
   user: MemberProfile | User | null;
-  tokens: TokenResponse | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   loginWithGoogle: () => Promise<void>;
@@ -41,33 +44,33 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<MemberProfile | User | null>(null);
-  const [tokens, setTokens] = useState<TokenResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 앱 시작 시 저장된 토큰으로 자동 복원
+  // 시작 시 한 번: 저장된 토큰 복원 + 자동 로그인 + 세션 만료 알림 콜백 등록
   useEffect(() => {
+    setOnSessionExpired(() => setUser(null));
+
     (async () => {
-      const stored = await loadTokens();
+      const stored = await loadFromStorage();
       if (stored) {
         try {
-          const me = await fetchMe(stored.accessToken);
-          setTokens(stored);
+          const me = await fetchMe();
           setUser(me);
         } catch {
-          // 만료/무효 토큰 → 깨끗하게 비우고 로그아웃 상태로 시작
-          await clearTokens();
+          // 토큰이 만료되었고 자동 refresh 까지 실패한 경우. session 은 이미 비워져 있음.
         }
       }
       setIsLoading(false);
     })();
+
+    return () => setOnSessionExpired(null);
   }, []);
 
-  // 백엔드에서 새 토큰을 받은 직후의 공통 후처리:
-  // 토큰 영속화 + 사용자 프로필 호출까지 묶어 한 호출자에서 다 처리한다.
+  // 로그인 직후 공통 후처리: 토큰 영속화 → 사용자 프로필 호출
+  // (saveTokens 가 먼저여야 fetchMe 가 자동으로 새 토큰을 첨부할 수 있다)
   const completeLogin = async (issued: TokenResponse) => {
-    const me = await fetchMe(issued.accessToken);
     await saveTokens(issued);
-    setTokens(issued);
+    const me = await fetchMe();
     setUser(me);
   };
 
@@ -88,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         (err as { code?: string })?.code === statusCodes.SIGN_IN_CANCELLED ||
         (err as { code?: string })?.code === statusCodes.IN_PROGRESS
       ) {
-        return; // 사용자 취소는 조용히 무시
+        return;
       }
       if (err instanceof AuthApiError) {
         console.warn('[auth] backend rejected:', err.code, err.message);
@@ -102,12 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithKakao = async () => {
     try {
       const kakao = await kakaoLogin();
-      // 백엔드는 kakao access token 으로 카카오 API(/v2/user/me) 를 직접 호출해 사용자 정보를 가져온다.
       const issued = await socialLogin('KAKAO', kakao.accessToken);
       await completeLogin(issued);
     } catch (err) {
       const msg = (err as { message?: string })?.message ?? '';
-      // 카카오 SDK 가 사용자 취소 시 던지는 에러는 메시지로만 식별 가능 (전용 코드 없음)
       if (msg.includes('user cancelled') || msg.includes('canceled')) {
         return;
       }
@@ -121,15 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loginAsGuest = () => {
-    // 애플 미구현 + "둘러보기" 임시 진입용. 실제 백엔드 호출 없이 mock 사용자로 진입.
+    // 애플 미구현 + "둘러보기": 백엔드 호출 없이 mock 사용자로 진입
     setUser(CURRENT_USER);
   };
 
   const logout = async () => {
+    const rt = getRefreshToken();
     try {
-      if (tokens?.refreshToken) {
-        await apiLogout(tokens.refreshToken);
-      }
+      if (rt) await apiLogout(rt);
     } catch (err) {
       console.warn('[auth] logout call failed:', err);
     }
@@ -143,16 +143,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* 세션이 없을 수도 있음 */
     }
-    await clearTokens();
+    await clearSession();
     setUser(null);
-    setTokens(null);
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        tokens,
         isLoading,
         isAuthenticated: !!user,
         loginWithGoogle,

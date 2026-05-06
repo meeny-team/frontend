@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">MeenyApp</string>
-    <!-- 카카오 SDK가 KakaoSDK.init() 시 읽는 네이티브 앱 키. 형식: "kakao" + {네이티브 앱 키} -->
-    <string name="kakao_app_key">kakao4d40392ebab5c4c6c28a02ea8461ec2b</string>
+    <!-- 카카오 SDK가 KakaoSdk.init() 의 appKey 인자로 그대로 전달받는 raw 네이티브 앱 키.
+         "kakao" 접두사를 붙이면 KOE101 (Admin Settings Issue) 발생. 접두사는 AndroidManifest 의
+         deep link scheme 에만 붙는다. -->
+    <string name="kakao_app_key">4d40392ebab5c4c6c28a02ea8461ec2b</string>
 </resources>
