@@ -3,7 +3,7 @@
  * 정산 현황 - 핀 단위 상세 보기 + 양방향 확인
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,7 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
@@ -122,25 +122,27 @@ export default function SettlementScreen() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
 
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      const playRes = await fetchPlayById(playId);
-      if (canceled || !playRes.data) return;
-      setPlay(playRes.data);
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const playRes = await fetchPlayById(playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
 
-      const [pinsRes, totalRes] = await Promise.all([
-        fetchPinsByPlayId(playId),
-        fetchPlayTotalAmount(playId),
-      ]);
-      if (canceled) return;
-      setPins(pinsRes.data);
-      setTotalAmount(totalRes.data);
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [playId]);
+        const [pinsRes, totalRes] = await Promise.all([
+          fetchPinsByPlayId(playId),
+          fetchPlayTotalAmount(playId),
+        ]);
+        if (canceled) return;
+        setPins(pinsRes.data);
+        setTotalAmount(totalRes.data);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [playId]),
+  );
 
   // play.members 로 userId → MemberSummary 매핑 (별도 회원 조회 없이 닉네임 표시)
   const memberMap = useMemo(

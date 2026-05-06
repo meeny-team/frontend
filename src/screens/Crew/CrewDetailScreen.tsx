@@ -3,7 +3,7 @@
  * 크루 상세 (플레이 목록)
  */
 
-import React, { useState, useCallback, useEffect, memo } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -18,7 +18,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
@@ -180,32 +180,35 @@ export default function CrewDetailScreen() {
   // Profile modal state
   const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
 
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      const crewRes = await fetchCrewById(crewId);
-      if (canceled) return;
-      const c = crewRes.data;
-      if (!c) return;
-      setCrew(c);
-      setInviteCode(c.inviteCode);
-      setCrewImageUri(c.coverImage ?? null);
+  // 화면 포커스마다 재fetch — 다른 화면(예: CreatePlay) 갔다 돌아왔을 때 갱신
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const crewRes = await fetchCrewById(crewId);
+        if (canceled) return;
+        const c = crewRes.data;
+        if (!c) return;
+        setCrew(c);
+        setInviteCode(c.inviteCode);
+        setCrewImageUri(c.coverImage ?? null);
 
-      const playsRes = await fetchPlaysByCrewId(crewId);
-      if (canceled) return;
-      const ps = playsRes.data;
-      setPlays(ps);
+        const playsRes = await fetchPlaysByCrewId(crewId);
+        if (canceled) return;
+        const ps = playsRes.data;
+        setPlays(ps);
 
-      const totals = await Promise.all(
-        ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
-      );
-      if (canceled) return;
-      setPlayTotals(Object.fromEntries(totals));
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [crewId]);
+        const totals = await Promise.all(
+          ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
+        );
+        if (canceled) return;
+        setPlayTotals(Object.fromEntries(totals));
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [crewId]),
+  );
 
   // 크루 이미지 선택
   const handlePickCrewImage = useCallback(() => {

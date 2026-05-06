@@ -3,7 +3,7 @@
  * 플레이 상세 (핀 타임라인)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -15,7 +15,7 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Circle, Polyline, Line, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
@@ -158,25 +158,27 @@ export default function PlayDetailScreen() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
 
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      const playRes = await fetchPlayById(playId);
-      if (canceled || !playRes.data) return;
-      setPlay(playRes.data);
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const playRes = await fetchPlayById(playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
 
-      const [pinsRes, totalRes] = await Promise.all([
-        fetchPinsByPlayId(playId),
-        fetchPlayTotalAmount(playId),
-      ]);
-      if (canceled) return;
-      setPins(pinsRes.data);
-      setTotalAmount(totalRes.data);
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [playId]);
+        const [pinsRes, totalRes] = await Promise.all([
+          fetchPinsByPlayId(playId),
+          fetchPlayTotalAmount(playId),
+        ]);
+        if (canceled) return;
+        setPins(pinsRes.data);
+        setTotalAmount(totalRes.data);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [playId]),
+  );
 
   const playMembers = play?.members ?? [];
   const avgAmount = playMembers.length > 0 ? Math.floor(totalAmount / playMembers.length) : 0;
