@@ -12,6 +12,12 @@
 import { request, AuthApiError } from './http';
 import { Crew, ApiResponse, CreateCrewRequest, UpdateCrewRequest } from './schema';
 
+interface BackendMemberSummary {
+  id: number;
+  nickname: string;
+  profileImage: string | null;
+}
+
 interface BackendCrewResponse {
   id: number;
   name: string;
@@ -19,14 +25,18 @@ interface BackendCrewResponse {
   coverImage: string | null;
   createdBy: number;
   createdAt: string;
-  memberIds: number[];
+  members: BackendMemberSummary[];
 }
 
 function mapCrew(b: BackendCrewResponse): Crew {
   return {
     id: String(b.id),
     name: b.name,
-    members: b.memberIds.map(String),
+    members: b.members.map(m => ({
+      id: String(m.id),
+      nickname: m.nickname,
+      profileImage: m.profileImage ?? undefined,
+    })),
     inviteCode: b.inviteCode,
     coverImage: b.coverImage ?? undefined,
     createdBy: String(b.createdBy),

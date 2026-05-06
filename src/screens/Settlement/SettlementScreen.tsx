@@ -3,7 +3,7 @@
  * 정산 현황 - 핀 단위 상세 보기 + 양방향 확인
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,16 +17,15 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
-  getPinsByPlayId,
-  getPlayTotalAmount,
-  getPlayAverageAmount,
+  fetchPlayById,
+  fetchPinsByPlayId,
+  fetchPlayTotalAmount,
   formatCurrency,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
+  Play,
+  MemberSummary,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -119,11 +118,38 @@ export default function SettlementScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const pins = getPinsByPlayId(playId);
-  const totalAmount = getPlayTotalAmount(playId);
-  const avgAmount = getPlayAverageAmount(playId);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const playRes = await fetchPlayById(playId);
+      if (canceled || !playRes.data) return;
+      setPlay(playRes.data);
+
+      const [pinsRes, totalRes] = await Promise.all([
+        fetchPinsByPlayId(playId),
+        fetchPlayTotalAmount(playId),
+      ]);
+      if (canceled) return;
+      setPins(pinsRes.data);
+      setTotalAmount(totalRes.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
+
+  // play.members 로 userId → MemberSummary 매핑 (별도 회원 조회 없이 닉네임 표시)
+  const memberMap = useMemo(
+    () => new Map((play?.members ?? []).map(m => [m.id, m] as const)),
+    [play],
+  );
+  const getUserById = (id: string): MemberSummary | undefined => memberMap.get(id);
+  const memberCount = play?.members.length ?? 0;
+  const avgAmount = memberCount > 0 ? Math.floor(totalAmount / memberCount) : 0;
 
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedPins, setExpandedPins] = useState<Set<string>>(new Set());
@@ -282,7 +308,7 @@ export default function SettlementScreen() {
     })).filter(item => item.settlements.length > 0);
   }, [pinSettlements, activeTab, settlementStates]);
 
-  if (!play || !crew) {
+  if (!play) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>플레이를 찾을 수 없습니다</Text>
@@ -309,7 +335,7 @@ export default function SettlementScreen() {
         {/* Play Info */}
         <View style={styles.playInfo}>
           <Text style={styles.playTitle}>{play.title}</Text>
-          <Text style={styles.crewName}>{crew.name}</Text>
+          {/* 크루 이름은 별도 호출이 필요해 이번 단계에선 생략. 필요 시 fetchCrewById 추가. */}
         </View>
 
         {/* Stats */}

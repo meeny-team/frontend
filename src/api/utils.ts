@@ -1,10 +1,13 @@
 /**
  * Meeny Utilities
- * 포맷팅, ID 생성, 데이터 조회 헬퍼 함수
+ * 포맷팅, ID 생성 헬퍼.
+ *
+ * 동기 getXxxById / getPlayTotalAmount 등 mock 기반 조회 함수는 화면이 모두
+ * 백엔드 API 와 연결되면서 사용처가 사라져 제거됨. 필요 시 백엔드 호출
+ * (fetchXxx) 를 사용.
  */
 
-import { User, Crew, Play, Pin, DateRange } from './schema';
-import { users, crews, plays, pins } from './mock';
+import { DateRange } from './schema';
 
 // ============================================
 // 포맷팅
@@ -36,7 +39,7 @@ export function formatDateRange(dateRange: DateRange): string {
 }
 
 // ============================================
-// ID 생성
+// ID 생성 (mock 시절 사용. 백엔드 연결 후 진짜 ID 는 백엔드가 발급)
 // ============================================
 
 export function generateId(prefix: string): string {
@@ -48,49 +51,4 @@ export function generateInviteCode(): string {
   return Array.from({ length: 6 }, () =>
     chars.charAt(Math.floor(Math.random() * chars.length))
   ).join('');
-}
-
-// ============================================
-// 데이터 조회 헬퍼
-// ============================================
-
-export function getUserById(userId: string): User | undefined {
-  return users.find(u => u.id === userId);
-}
-
-export function getCrewById(crewId: string): Crew | undefined {
-  return crews.find(c => c.id === crewId);
-}
-
-export function getPlayById(playId: string): Play | undefined {
-  return plays.find(p => p.id === playId);
-}
-
-export function getPlaysByCrewId(crewId: string): Play[] {
-  return plays.filter(p => p.crewId === crewId);
-}
-
-export function getPinsByPlayId(playId: string): Pin[] {
-  return pins.filter(p => p.playId === playId);
-}
-
-export function getPlayTotalAmount(playId: string): number {
-  return pins
-    .filter(pin => pin.playId === playId)
-    .reduce((sum, pin) => sum + pin.amount, 0);
-}
-
-export function getPlayAverageAmount(playId: string): number {
-  const play = plays.find(p => p.id === playId);
-  if (!play || play.members.length === 0) return 0;
-  const total = getPlayTotalAmount(playId);
-  return Math.round(total / play.members.length);
-}
-
-export function getPlayMembers(playId: string): User[] {
-  const play = plays.find(p => p.id === playId);
-  if (!play) return [];
-  return play.members
-    .map(id => users.find(u => u.id === id))
-    .filter((u): u is User => u !== undefined);
 }

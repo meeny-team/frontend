@@ -3,7 +3,7 @@
  * 플레이 설정 (제목, 태그, 멤버 수정)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -18,12 +18,15 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
   PLAY_TYPE_LABELS,
   REGIONS,
   PlayType,
+  Play,
+  Crew,
+  fetchPlayById,
+  fetchCrewById,
+  updatePlay,
+  deletePlay,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -84,19 +87,38 @@ export default function PlaySettingsScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const crewMembers = useMemo(() => {
-    if (!crew) return [];
-    return crew.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [crew]);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const crewMembers = useMemo(() => crew?.members ?? [], [crew]);
 
-  const [title, setTitle] = useState(play?.title || '');
-  const [type, setType] = useState<PlayType>(play?.type || 'travel');
-  const [region, setRegion] = useState(play?.region || '');
-  const [tags, setTags] = useState<string[]>(play?.tags || []);
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState<PlayType>('travel');
+  const [region, setRegion] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(play?.members || []);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const playRes = await fetchPlayById(playId);
+      if (canceled || !playRes.data) return;
+      const p = playRes.data;
+      setPlay(p);
+      setTitle(p.title);
+      setType(p.type);
+      setRegion(p.region ?? '');
+      setTags(p.tags ?? []);
+      setSelectedMemberIds(p.members.map(m => m.id));
+
+      const crewRes = await fetchCrewById(p.crewId);
+      if (canceled || !crewRes.data) return;
+      setCrew(crewRes.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
 
   if (!play || !crew) {
     return (
@@ -108,9 +130,9 @@ export default function PlaySettingsScreen() {
 
   const toggleMember = (memberId: string) => {
     if (memberId === myId) return;
-    setSelectedMembers(prev =>
+    setSelectedMemberIds((prev: string[]) =>
       prev.includes(memberId)
-        ? prev.filter(id => id !== memberId)
+        ? prev.filter((id: string) => id !== memberId)
         : [...prev, memberId]
     );
   };
@@ -149,7 +171,7 @@ export default function PlaySettingsScreen() {
     );
   };
 
-  const isValid = title.trim().length > 0 && selectedMembers.length > 0;
+  const isValid = title.trim().length > 0 && selectedMemberIds.length > 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -253,12 +275,12 @@ export default function PlaySettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>참여 멤버</Text>
-            <Text style={styles.memberCount}>{selectedMembers.length}명</Text>
+            <Text style={styles.memberCount}>{selectedMemberIds.length}명</Text>
           </View>
           <View style={styles.memberList}>
             {crewMembers.map(member => {
               if (!member) return null;
-              const isSelected = selectedMembers.includes(member.id);
+              const isSelected = selectedMemberIds.includes(member.id);
               const isCurrentUser = member.id === myId;
               return (
                 <TouchableOpacity

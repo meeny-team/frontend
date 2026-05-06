@@ -23,9 +23,9 @@ import { colors, spacing, radius } from '../../design';
 import {
   PLAY_TYPE_LABELS,
   PlayType,
-  getCrewById,
-  getUserById,
+  fetchCrewById,
   createPlay,
+  Crew,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -73,11 +73,8 @@ export default function CreatePlayScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
-  const crew = getCrewById(crewId);
-  const crewMembers = useMemo(() => {
-    if (!crew) return [];
-    return crew.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [crew]);
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const crewMembers = useMemo(() => crew?.members ?? [], [crew]);
 
   // Form state
   const [step, setStep] = useState(1);
@@ -86,8 +83,22 @@ export default function CreatePlayScreen() {
   const [customType, setCustomType] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(crew?.members || []);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [locationName, setLocationName] = useState('');
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const res = await fetchCrewById(crewId);
+      if (canceled || !res.data) return;
+      setCrew(res.data);
+      // 모든 크루 멤버를 기본 선택
+      setSelectedMemberIds(res.data.members.map(m => m.id));
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [crewId]);
 
   // Animation
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -103,7 +114,7 @@ export default function CreatePlayScreen() {
 
   const toggleMember = (memberId: string) => {
     if (memberId === myId) return;
-    setSelectedMembers(prev =>
+    setSelectedMemberIds(prev =>
       prev.includes(memberId)
         ? prev.filter(id => id !== memberId)
         : [...prev, memberId]
@@ -111,7 +122,7 @@ export default function CreatePlayScreen() {
   };
 
   const selectAllMembers = () => {
-    setSelectedMembers(crew?.members || []);
+    setSelectedMemberIds(crew?.members.map(m => m.id) ?? []);
   };
 
   const handleNext = () => {
@@ -163,7 +174,7 @@ export default function CreatePlayScreen() {
           end: endDate || undefined,
         },
         region: locationName || undefined,
-        members: selectedMembers,
+        memberIds: selectedMemberIds,
         tags: customType ? [customType] : undefined,
       });
       navigation.goBack();
@@ -182,7 +193,7 @@ export default function CreatePlayScreen() {
       case 3:
         return true; // Location is optional
       case 4:
-        return selectedMembers.length > 0;
+        return selectedMemberIds.length > 0;
       default:
         return false;
     }
@@ -310,12 +321,12 @@ export default function CreatePlayScreen() {
           <Text style={styles.selectAllText}>전체 선택</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.memberCount}>{selectedMembers.length}명 선택됨</Text>
+      <Text style={styles.memberCount}>{selectedMemberIds.length}명 선택됨</Text>
 
       <ScrollView style={styles.memberScroll} showsVerticalScrollIndicator={false}>
         {crewMembers.map(member => {
           if (!member) return null;
-          const isSelected = selectedMembers.includes(member.id);
+          const isSelected = selectedMemberIds.includes(member.id);
           const isCurrentUser = member.id === myId;
           return (
             <TouchableOpacity
@@ -334,9 +345,7 @@ export default function CreatePlayScreen() {
                   {member.nickname}
                   {isCurrentUser && <Text style={styles.memberYou}> (나)</Text>}
                 </Text>
-                {member.bio && (
-                  <Text style={styles.memberBio} numberOfLines={1}>{member.bio}</Text>
-                )}
+                {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
               </View>
               {isSelected && (
                 <View style={styles.memberCheck}>

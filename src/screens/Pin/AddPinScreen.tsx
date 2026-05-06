@@ -26,11 +26,10 @@ import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
 // import Geolocation from '@react-native-community/geolocation';
 import { colors, spacing, radius } from '../../design';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
   CATEGORY_LABELS,
   PinCategory,
+  Play,
+  fetchPlayById,
   createPin,
 } from '../../api';
 import { searchPlaces, KakaoPlace } from '../../api/kakao';
@@ -103,12 +102,21 @@ export default function AddPinScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
   const myId = user ? String(user.id) : '';
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const members = useMemo(() => {
-    if (!crew) return [];
-    return crew.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [crew]);
+  const [play, setPlay] = useState<Play | null>(null);
+  // 결제자/분담자 후보는 play 의 멤버. 백엔드도 play 멤버로 검증.
+  const members = useMemo(() => play?.members ?? [], [play]);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const res = await fetchPlayById(playId);
+      if (canceled || !res.data) return;
+      setPlay(res.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
 
   // Form state
   const [step, setStep] = useState(1);
@@ -121,9 +129,13 @@ export default function AddPinScreen() {
   const [selectedPlace, setSelectedPlace] = useState<KakaoPlace | null>(null);
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string>(myId);
-  const [participants, setParticipants] = useState<Set<string>>(
-    new Set(members.map(m => m?.id).filter(Boolean) as string[])
-  );
+  const [participants, setParticipants] = useState<Set<string>>(new Set());
+
+  // play 가 로드되면 모든 멤버를 분담자 기본 선택
+  useEffect(() => {
+    if (members.length === 0) return;
+    setParticipants(new Set(members.map(m => m.id)));
+  }, [members]);
   const [settlementType, setSettlementType] = useState<'equal' | 'custom'>('equal');
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
 
@@ -177,7 +189,7 @@ export default function AddPinScreen() {
   };
 
   const selectAllParticipants = () => {
-    setParticipants(new Set(members.map(m => m?.id).filter(Boolean) as string[]));
+    setParticipants(new Set(members.map(m => m.id)));
   };
 
   const handleCustomSplitChange = (userId: string, value: string) => {
@@ -651,7 +663,7 @@ export default function AddPinScreen() {
     </ScrollView>
   );
 
-  if (!play || !crew) {
+  if (!play) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>플레이를 찾을 수 없습니다</Text>
