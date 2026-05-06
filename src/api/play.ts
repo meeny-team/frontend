@@ -16,13 +16,19 @@ interface BackendDateRange {
   end: string | null;
 }
 
+interface BackendMemberSummary {
+  id: number;
+  nickname: string;
+  profileImage: string | null;
+}
+
 interface BackendPlayResponse {
   id: number;
   crewId: number;
   title: string;
   type: 'TRAVEL' | 'DATE' | 'HANGOUT' | 'DAILY' | 'ETC';
   dateRange: BackendDateRange;
-  memberIds: number[];
+  members: BackendMemberSummary[];
   regions: string[];
   tags: string[];
   coverImage: string | null;
@@ -40,7 +46,11 @@ function mapPlay(b: BackendPlayResponse): Play {
       start: b.dateRange.start,
       end: b.dateRange.end ?? undefined,
     },
-    members: b.memberIds.map(String),
+    members: b.members.map(m => ({
+      id: String(m.id),
+      nickname: m.nickname,
+      profileImage: m.profileImage ?? undefined,
+    })),
     region: b.regions[0] ?? undefined,
     tags: b.tags,
     coverImage: b.coverImage ?? undefined,
@@ -68,7 +78,7 @@ function toBackendBody(req: Partial<CreatePlayRequest> & { crewId?: string }): P
   if (req.dateRange !== undefined) {
     body.dateRange = { start: req.dateRange.start, end: req.dateRange.end };
   }
-  if (req.members !== undefined) body.memberIds = req.members.map(Number);
+  if (req.memberIds !== undefined) body.memberIds = req.memberIds.map(Number);
   if (req.region !== undefined) body.regions = req.region ? [req.region] : [];
   if (req.tags !== undefined) body.tags = req.tags;
   if (req.coverImage !== undefined) body.coverImage = req.coverImage;

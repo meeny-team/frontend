@@ -3,7 +3,7 @@
  * 크루 상세 (플레이 목록)
  */
 
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, useEffect, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -24,15 +24,15 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
-  getCrewById,
-  getPlaysByCrewId,
-  getUserById,
-  getPlayTotalAmount,
+  fetchCrewById,
+  fetchPlaysByCrewId,
+  fetchPlayTotalAmount,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
+  Crew,
   Play,
-  User,
+  MemberSummary,
 } from '../../api';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -131,12 +131,11 @@ const crewImageStyles = StyleSheet.create({
 
 interface PlayCardProps {
   play: Play;
+  totalAmount: number;
   onPress: () => void;
 }
 
-function PlayCard({ play, onPress }: PlayCardProps) {
-  const totalAmount = getPlayTotalAmount(play.id);
-
+function PlayCard({ play, totalAmount, onPress }: PlayCardProps) {
   return (
     <TouchableOpacity style={styles.playCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.playImageContainer}>
@@ -168,17 +167,45 @@ export default function CrewDetailScreen() {
   const route = useRoute<RouteProps>();
   const { crewId } = route.params;
 
-  const crew = getCrewById(crewId);
-  const plays = getPlaysByCrewId(crewId);
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const [plays, setPlays] = useState<Play[]>([]);
+  const [playTotals, setPlayTotals] = useState<Record<string, number>>({});
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
   const [inviteEnabled, setInviteEnabled] = useState(true);
-  const [inviteCode, setInviteCode] = useState(crew?.inviteCode || '');
-  const [crewImageUri, setCrewImageUri] = useState<string | null>(crew?.coverImage || null);
+  const [inviteCode, setInviteCode] = useState('');
+  const [crewImageUri, setCrewImageUri] = useState<string | null>(null);
 
   // Profile modal state
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const crewRes = await fetchCrewById(crewId);
+      if (canceled) return;
+      const c = crewRes.data;
+      if (!c) return;
+      setCrew(c);
+      setInviteCode(c.inviteCode);
+      setCrewImageUri(c.coverImage ?? null);
+
+      const playsRes = await fetchPlaysByCrewId(crewId);
+      if (canceled) return;
+      const ps = playsRes.data;
+      setPlays(ps);
+
+      const totals = await Promise.all(
+        ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
+      );
+      if (canceled) return;
+      setPlayTotals(Object.fromEntries(totals));
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [crewId]);
 
   // 크루 이미지 선택
   const handlePickCrewImage = useCallback(() => {
@@ -288,22 +315,18 @@ export default function CrewDetailScreen() {
           <Text style={styles.sectionLabel}>멤버 {crew.members.length}명</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.membersRow}>
-              {crew.members.map(memberId => {
-                const user = getUserById(memberId);
-                if (!user) return null;
-                return (
-                  <TouchableOpacity
-                    key={memberId}
-                    style={styles.memberItem}
-                    onPress={() => setSelectedUser(user)}
-                  >
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{user.nickname[0]}</Text>
-                    </View>
-                    <Text style={styles.memberName}>{user.nickname}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {crew.members.map(member => (
+                <TouchableOpacity
+                  key={member.id}
+                  style={styles.memberItem}
+                  onPress={() => setSelectedUser(member)}
+                >
+                  <View style={styles.memberAvatar}>
+                    <Text style={styles.memberAvatarText}>{member.nickname[0] ?? '?'}</Text>
+                  </View>
+                  <Text style={styles.memberName}>{member.nickname}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </ScrollView>
         </View>
@@ -326,6 +349,7 @@ export default function CrewDetailScreen() {
             <PlayCard
               key={play.id}
               play={play}
+              totalAmount={playTotals[play.id] ?? 0}
               onPress={() => navigation.navigate('PlayDetail', { playId: play.id })}
             />
           ))}
@@ -363,18 +387,13 @@ export default function CrewDetailScreen() {
             <View style={styles.profileContent}>
               {/* Avatar */}
               <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
+                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0] ?? '?'}</Text>
               </View>
 
               {/* Name */}
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
 
-              {/* Bio */}
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* Bio: 백엔드의 MemberSummary 에는 bio 가 없음 — 본인 화면(Settings/ProfileEdit) 외엔 노출 X */}
             </View>
           )}
         </View>

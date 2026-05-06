@@ -3,7 +3,7 @@
  * 핀 상세
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -21,15 +21,15 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
-  getUserById,
-  getPlayById,
+  fetchPinById,
+  fetchPlayById,
   formatCurrency,
   formatDate,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
-  User,
-  DUMMY_PINS,
+  Play,
+  MemberSummary,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -55,10 +55,6 @@ function XIcon() {
   );
 }
 
-function getPinById(pinId: string): Pin | undefined {
-  return DUMMY_PINS.find(p => p.id === pinId);
-}
-
 export default function PinDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -68,23 +64,35 @@ export default function PinDetailScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number 라 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
-  const pin = getPinById(pinId);
-  const author = pin ? getUserById(pin.authorId) : undefined;
-  const play = pin ? getPlayById(pin.playId) : undefined;
+  const [pin, setPin] = useState<Pin | null>(null);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const pinRes = await fetchPinById(pinId);
+      if (canceled || !pinRes.data) return;
+      setPin(pinRes.data);
+      // 핀이 속한 플레이의 멤버 정보(닉네임 매핑) 가 필요해 같이 fetch
+      const playRes = await fetchPlayById(pinRes.data.playId);
+      if (canceled || !playRes.data) return;
+      setPlay(playRes.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [pinId]);
+
+  // play.members 를 통해 임의의 userId → MemberSummary 매핑
+  const memberMap = new Map((play?.members ?? []).map(m => [m.id, m]));
+  const author = pin ? memberMap.get(pin.authorId) : undefined;
   const categoryColor = pin ? CATEGORY_COLORS[pin.category] : colors.muted;
 
-  // Get display name for any user
-  const getDisplayName = (userId: string) => {
-    return getUserById(userId)?.nickname || '알 수 없음';
-  };
+  const getDisplayName = (userId: string) => memberMap.get(userId)?.nickname ?? '알 수 없음';
+  const getDisplayInitial = (userId: string) => getDisplayName(userId)[0] ?? '?';
 
-  const getDisplayInitial = (userId: string) => {
-    return getDisplayName(userId)[0];
-  };
-
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-
-  if (!pin || !author) {
+  if (!pin) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>핀을 찾을 수 없습니다</Text>
@@ -239,14 +247,10 @@ export default function PinDetailScreen() {
           {selectedUser && (
             <View style={styles.profileContent}>
               <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
+                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0] ?? '?'}</Text>
               </View>
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
             </View>
           )}
         </View>

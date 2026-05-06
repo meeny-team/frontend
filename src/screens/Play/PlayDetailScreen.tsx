@@ -3,7 +3,7 @@
  * 플레이 상세 (핀 타임라인)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -20,20 +20,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Circle, Polyline, Line, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
-  getPlayById,
-  getCrewById,
-  getPinsByPlayId,
-  getUserById,
-  getPlayTotalAmount,
-  getPlayAverageAmount,
-  getPlayMembers,
+  fetchPlayById,
+  fetchPinsByPlayId,
+  fetchPlayTotalAmount,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
-  User,
+  Play,
+  MemberSummary,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -90,12 +87,12 @@ function XIcon() {
 
 interface PinCardProps {
   pin: Pin;
+  author?: MemberSummary;
   onPress: () => void;
   onPressAuthor?: () => void;
 }
 
-function PinCard({ pin, onPress, onPressAuthor }: PinCardProps) {
-  const author = getUserById(pin.authorId);
+function PinCard({ pin, author, onPress, onPressAuthor }: PinCardProps) {
   const categoryColor = CATEGORY_COLORS[pin.category];
 
   const displayName = author?.nickname;
@@ -156,17 +153,35 @@ export default function PlayDetailScreen() {
   // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const pins = getPinsByPlayId(playId);
-  const totalAmount = getPlayTotalAmount(playId);
-  const avgAmount = getPlayAverageAmount(playId);
-  const playMembers = getPlayMembers(playId);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const playRes = await fetchPlayById(playId);
+      if (canceled || !playRes.data) return;
+      setPlay(playRes.data);
 
-  // Check if current user is a member of this crew
-  const isMember = !!myId && (crew?.members.includes(myId) ?? false);
+      const [pinsRes, totalRes] = await Promise.all([
+        fetchPinsByPlayId(playId),
+        fetchPlayTotalAmount(playId),
+      ]);
+      if (canceled) return;
+      setPins(pinsRes.data);
+      setTotalAmount(totalRes.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
+
+  const playMembers = play?.members ?? [];
+  const avgAmount = playMembers.length > 0 ? Math.floor(totalAmount / playMembers.length) : 0;
+  // 본인이 이 플레이의 멤버인가? (백엔드는 GET /api/plays/{id} 자체가 멤버에게만 노출이라 사실상 항상 true)
+  const isMember = !!myId && playMembers.some(m => m.id === myId);
 
   if (!play) {
     return (
@@ -175,6 +190,9 @@ export default function PlayDetailScreen() {
       </View>
     );
   }
+
+  // 핀 작성자 닉네임 조회: play.members 에서 직접 찾는다 (별도 호출 불필요)
+  const memberMap = new Map(playMembers.map(m => [m.id, m]));
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -287,11 +305,12 @@ export default function PlayDetailScreen() {
             )}
           </View>
           {pins.map(pin => {
-            const author = getUserById(pin.authorId);
+            const author = memberMap.get(pin.authorId);
             return (
               <PinCard
                 key={pin.id}
                 pin={pin}
+                author={author}
                 onPress={() => navigation.navigate('PinDetail', { pinId: pin.id })}
                 onPressAuthor={author ? () => setSelectedUser(author) : undefined}
               />
@@ -327,14 +346,10 @@ export default function PlayDetailScreen() {
           {selectedUser && (
             <View style={styles.profileContent}>
               <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
+                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0] ?? '?'}</Text>
               </View>
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
             </View>
           )}
         </View>

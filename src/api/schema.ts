@@ -34,10 +34,17 @@ export interface UpdateUserRequest {
 // Crew
 // ============================================
 
+// 백엔드 MemberSummary 와 매칭. 크루/플레이 응답에 같이 내려와서 화면이 별도 회원 조회 없이 사용.
+export interface MemberSummary {
+  id: string;
+  nickname: string;
+  profileImage?: string;
+}
+
 export interface Crew {
   id: string;
   name: string;
-  members: string[];
+  members: MemberSummary[];
   inviteCode: string;
   coverImage?: string;
   createdBy: string;
@@ -73,7 +80,7 @@ export interface Play {
   dateRange: DateRange;
   region?: string;
   coverImage?: string;
-  members: string[];
+  members: MemberSummary[];
   tags?: string[];
   createdBy: string;
   createdAt: string;
@@ -86,7 +93,8 @@ export interface CreatePlayRequest {
   dateRange: DateRange;
   region?: string;
   coverImage?: string;
-  members: string[];
+  // 생성/수정 요청은 멤버 ID 묶음만 보낸다 — 응답 시에만 MemberSummary 로 풀어줌
+  memberIds: string[];
   tags?: string[];
 }
 
