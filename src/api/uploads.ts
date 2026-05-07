@@ -50,9 +50,10 @@ export async function uploadPickedImage(
   // Blob.type 으로 덮어쓰는 케이스가 있어, 서명값과 동일한 type 의 Blob 으로 다시 감싼다.
   const localResponse = await fetch(asset.uri);
   const rawBlob = await localResponse.blob();
+  // RN 의 BlobOptions 는 lastModified 가 required (브라우저 BlobPropertyBag 과 다름).
   const body = rawBlob.type === presigned.contentType
     ? rawBlob
-    : new Blob([rawBlob], { type: presigned.contentType });
+    : new Blob([rawBlob], { type: presigned.contentType, lastModified: Date.now() });
 
   const putResponse = await fetch(presigned.uploadUrl, {
     method: 'PUT',
