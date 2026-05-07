@@ -17,7 +17,9 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Image,
 } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
@@ -31,6 +33,8 @@ import {
   Play,
   fetchPlayById,
   createPin,
+  uploadPickedImage,
+  PickedImageAsset,
 } from '../../api';
 import { searchPlaces, KakaoPlace } from '../../api/kakao';
 import { useAuth } from '../../auth/Auth';
@@ -88,6 +92,8 @@ function MapPinIcon() {
 
 const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity'];
 
+const MAX_PIN_IMAGES = 3;
+
 interface LocationCoords {
   latitude: number;
   longitude: number;
@@ -130,6 +136,9 @@ export default function AddPinScreen() {
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string>(myId);
   const [participants, setParticipants] = useState<Set<string>>(new Set());
+  // 선택한 이미지 자산 (최대 MAX_IMAGES). createPin 호출 시 모두 업로드되어 publicUrl 로 변환된다.
+  const [pickedAssets, setPickedAssets] = useState<PickedImageAsset[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   // play 가 로드되면 모든 멤버를 분담자 기본 선택
   useEffect(() => {
@@ -281,8 +290,55 @@ export default function AddPinScreen() {
     }
   };
 
+  // 이미지 선택: 남은 슬롯만큼 multi-select. uri/type/fileName 만 보관하고 업로드는 제출 시점.
+  const handlePickImages = useCallback(() => {
+    if (pickedAssets.length >= MAX_PIN_IMAGES) {
+      Alert.alert('알림', `사진은 최대 ${MAX_PIN_IMAGES}장까지 선택할 수 있습니다.`);
+      return;
+    }
+    launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      selectionLimit: MAX_PIN_IMAGES - pickedAssets.length,
+      includeBase64: false,
+    }).then(response => {
+      if (response.didCancel || response.errorCode) {
+        if (response.errorCode === 'permission') {
+          Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
+        }
+        return;
+      }
+      const newAssets: PickedImageAsset[] = (response.assets ?? [])
+        .filter(a => !!a.uri)
+        .map(a => ({ uri: a.uri!, type: a.type ?? null, fileName: a.fileName ?? null }));
+      setPickedAssets(prev => [...prev, ...newAssets].slice(0, MAX_PIN_IMAGES));
+    }).catch(() => {
+      Alert.alert('오류', '이미지를 선택할 수 없습니다.');
+    });
+  }, [pickedAssets.length]);
+
+  const handleRemoveImage = useCallback((index: number) => {
+    setPickedAssets(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleCreate = async () => {
-    if (!category) return;
+    if (!category || submitting) return;
+
+    setSubmitting(true);
+
+    let imageUrls: string[] | undefined;
+    if (pickedAssets.length > 0) {
+      try {
+        imageUrls = await Promise.all(pickedAssets.map(a => uploadPickedImage(a, 'PIN')));
+      } catch (e) {
+        setSubmitting(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
 
     try {
       const splits = selectedParticipants.map(m => ({
@@ -299,6 +355,7 @@ export default function AddPinScreen() {
         title: title.trim(),
         memo: memo.trim() || undefined,
         location: locationName.trim() || undefined,
+        images: imageUrls,
         settlement: {
           type: settlementType,
           paidBy,
@@ -308,6 +365,8 @@ export default function AddPinScreen() {
       navigation.goBack();
     } catch (error) {
       Alert.alert('오류', '핀 생성에 실패했습니다.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -364,16 +423,24 @@ export default function AddPinScreen() {
       <Text style={styles.inputLabel}>사진</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
         <View style={styles.imageRow}>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-            <Text style={styles.imageAddText}>사진 추가</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-          </TouchableOpacity>
+          {pickedAssets.map((asset, idx) => (
+            <View key={`${asset.uri}-${idx}`} style={styles.imageSlot}>
+              <Image source={{ uri: asset.uri }} style={styles.imageThumb} />
+              <TouchableOpacity
+                style={styles.imageRemoveBtn}
+                onPress={() => handleRemoveImage(idx)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.imageRemoveText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          {pickedAssets.length < MAX_PIN_IMAGES && (
+            <TouchableOpacity style={styles.imageAddButton} onPress={handlePickImages}>
+              <Text style={styles.imageAddIcon}>+</Text>
+              {pickedAssets.length === 0 && <Text style={styles.imageAddText}>사진 추가</Text>}
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -850,6 +917,35 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  imageSlot: {
+    width: 100,
+    height: 100,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  imageThumb: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.lg,
+  },
+  imageRemoveBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageRemoveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 16,
   },
   imageAddIcon: {
     fontSize: 28,
