@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Line, Circle } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { createCrew, isUploadableImageUrl } from '../../api';
+import { createCrew, uploadPickedImage, PickedImageAsset } from '../../api';
 
 // ============ Icons (메모이제이션) ============
 
@@ -68,6 +68,8 @@ export default function CreateCrewScreen() {
 
   const [name, setName] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // picker 로 새로 고른 자산. 생성 시 S3 로 업로드되며, picker 미사용이면 null.
+  const [pickedAsset, setPickedAsset] = useState<PickedImageAsset | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const isValid = name.trim().length > 0;
@@ -79,9 +81,9 @@ export default function CreateCrewScreen() {
     requestAnimationFrame(() => {
       launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.1,
-        maxWidth: 100,
-        maxHeight: 100,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
         selectionLimit: 1,
         includeBase64: false,
       }).then(response => {
@@ -92,11 +94,16 @@ export default function CreateCrewScreen() {
           return;
         }
 
-        const pickedUri = response.assets?.[0]?.uri;
-        if (pickedUri) {
+        const picked = response.assets?.[0];
+        if (picked?.uri) {
           // 이미지 선택 완료 후 다음 프레임에서 상태 업데이트
           requestAnimationFrame(() => {
-            setImageUri(pickedUri);
+            setImageUri(picked.uri!);
+            setPickedAsset({
+              uri: picked.uri!,
+              type: picked.type ?? null,
+              fileName: picked.fileName ?? null,
+            });
           });
         }
       }).catch(() => {
@@ -111,16 +118,15 @@ export default function CreateCrewScreen() {
     Keyboard.dismiss();
     setIsLoading(true);
 
-    // S3 미배포 단계 — 디바이스 로컬 경로(file://)는 보내지 않고, http(s) URL 만 백엔드 저장.
-    const uploadableCover = isUploadableImageUrl(imageUri) ? imageUri : undefined;
-    if (imageUri && !uploadableCover) {
-      Alert.alert('이미지 보류', '커버 이미지 업로드는 곧 지원 예정입니다. 이미지 없이 크루를 먼저 만들게요.');
-    }
-
     try {
+      let coverImage: string | undefined;
+      if (pickedAsset) {
+        coverImage = await uploadPickedImage(pickedAsset, 'CREW');
+      }
+
       const response = await createCrew({
         name: name.trim(),
-        coverImage: uploadableCover,
+        coverImage,
       });
 
       if (response.status === 200) {
@@ -129,11 +135,12 @@ export default function CreateCrewScreen() {
         Alert.alert('오류', response.message || '크루 생성에 실패했습니다.');
       }
     } catch (error) {
-      Alert.alert('오류', '크루 생성 중 문제가 발생했습니다.');
+      const msg = error instanceof Error ? error.message : '크루 생성 중 문제가 발생했습니다.';
+      Alert.alert('오류', msg);
     } finally {
       setIsLoading(false);
     }
-  }, [name, imageUri, navigation]);
+  }, [name, pickedAsset, navigation]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

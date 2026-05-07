@@ -22,7 +22,7 @@ import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
 import { getAccessToken } from '../../auth/session';
-import { updateCurrentUser, isUploadableImageUrl } from '../../api';
+import { updateCurrentUser, uploadPickedImage, PickedImageAsset } from '../../api';
 
 // ============ Icons ============
 
@@ -71,6 +71,8 @@ export default function ProfileEditScreen() {
   const [nickname, setNickname] = useState(initialNickname);
   const [bio, setBio] = useState(initialBio);
   const [imageUri, setImageUri] = useState<string | null>(initialImage);
+  // picker 로 새로 고른 자산. 저장 시 S3 업로드 대상이며, 기존 https:// URL 만 있을 때는 null.
+  const [pickedAsset, setPickedAsset] = useState<PickedImageAsset | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handlePickImage = useCallback(() => {
@@ -79,9 +81,9 @@ export default function ProfileEditScreen() {
     requestAnimationFrame(() => {
       launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.1,
-        maxWidth: 100,
-        maxHeight: 100,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
         selectionLimit: 1,
         includeBase64: false,
       }).then(response => {
@@ -92,10 +94,15 @@ export default function ProfileEditScreen() {
           return;
         }
 
-        const pickedUri = response.assets?.[0]?.uri;
-        if (pickedUri) {
+        const picked = response.assets?.[0];
+        if (picked?.uri) {
           requestAnimationFrame(() => {
-            setImageUri(pickedUri);
+            setImageUri(picked.uri!);
+            setPickedAsset({
+              uri: picked.uri!,
+              type: picked.type ?? null,
+              fileName: picked.fileName ?? null,
+            });
           });
         }
       }).catch(() => {
@@ -104,20 +111,9 @@ export default function ProfileEditScreen() {
     });
   }, []);
 
-  // 프로필 저장: 변경된 필드만 PATCH /api/users/me 로 보냄. 게스트(토큰 없음)는 로컬 mock 만 갱신.
+  // 프로필 저장: 새로 고른 이미지면 먼저 S3 업로드 → publicUrl 만 PATCH 로 전송. 게스트(토큰 없음)는 화면만 닫음.
   const handleSave = async () => {
     if (saving) return;
-    const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
-    if (nickname !== initialNickname) patch.nickname = nickname.trim();
-    if (bio !== initialBio) patch.bio = bio;
-    // 이미지 업로드용 S3 가 아직 배포 전이라, 디바이스 로컬 경로(file://)는 백엔드에 보내지 않는다.
-    // 사용자가 새 이미지를 골랐어도 http(s) URL 이 아니면 변경 시도를 건너뛰고 안내 Alert.
-    const imageChanged = imageUri !== initialImage;
-    if (imageChanged && isUploadableImageUrl(imageUri)) {
-      patch.profileImage = imageUri;
-    } else if (imageChanged && imageUri && !isUploadableImageUrl(imageUri)) {
-      Alert.alert('이미지 변경 보류', '이미지 업로드는 곧 지원 예정입니다. 다른 항목만 저장할게요.');
-    }
 
     if (!getAccessToken()) {
       // 게스트 모드: 백엔드 호출 없이 화면만 닫는다.
@@ -126,6 +122,24 @@ export default function ProfileEditScreen() {
     }
 
     setSaving(true);
+
+    let uploadedUrl: string | null = null;
+    if (pickedAsset) {
+      try {
+        uploadedUrl = await uploadPickedImage(pickedAsset, 'PROFILE');
+      } catch (e) {
+        setSaving(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
+
+    const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
+    if (nickname !== initialNickname) patch.nickname = nickname.trim();
+    if (bio !== initialBio) patch.bio = bio;
+    if (uploadedUrl) patch.profileImage = uploadedUrl;
+
     const res = await updateCurrentUser(patch);
     setSaving(false);
     if (!res.data) {

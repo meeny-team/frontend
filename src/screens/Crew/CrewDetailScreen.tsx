@@ -30,6 +30,8 @@ import {
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
+  updateCrew,
+  uploadPickedImage,
   Crew,
   Play,
   MemberSummary,
@@ -210,19 +212,19 @@ export default function CrewDetailScreen() {
     }, [crewId]),
   );
 
-  // 크루 이미지 선택
+  // 크루 이미지 변경: picker → S3 업로드 → PATCH /api/crews/:id 까지 한 번에. 미리보기는 업로드 전 로컬 URI 로 즉시.
   const handlePickCrewImage = useCallback(() => {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
       launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.1,
-        maxWidth: 100,
-        maxHeight: 100,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
         selectionLimit: 1,
         includeBase64: false,
-      }).then(response => {
+      }).then(async response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
@@ -230,17 +232,34 @@ export default function CrewDetailScreen() {
           return;
         }
 
-        const pickedUri = response.assets?.[0]?.uri;
-        if (pickedUri) {
-          requestAnimationFrame(() => {
-            setCrewImageUri(pickedUri);
-          });
+        const picked = response.assets?.[0];
+        if (!picked?.uri) return;
+
+        // 즉시 로컬 미리보기
+        setCrewImageUri(picked.uri);
+
+        try {
+          const publicUrl = await uploadPickedImage(
+            { uri: picked.uri, type: picked.type ?? null, fileName: picked.fileName ?? null },
+            'CREW',
+          );
+          const result = await updateCrew(crewId, { coverImage: publicUrl });
+          if (result.status === 200 && result.data) {
+            // 백엔드가 presigned GET URL 로 변환해 응답하므로 그것을 사용
+            setCrewImageUri(result.data.coverImage ?? null);
+            setCrew(result.data);
+          } else {
+            Alert.alert('저장 실패', result.message ?? '크루 이미지를 저장하지 못했습니다.');
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+          Alert.alert('업로드 실패', msg);
         }
       }).catch(() => {
         Alert.alert('오류', '이미지를 선택할 수 없습니다.');
       });
     });
-  }, []);
+  }, [crewId]);
 
   // Generate random invite code
   const generateInviteCode = () => {
