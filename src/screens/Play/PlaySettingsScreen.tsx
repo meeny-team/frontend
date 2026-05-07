@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
   PLAY_TYPE_LABELS,
   REGIONS,
@@ -340,11 +341,14 @@ export default function PlaySettingsScreen() {
                   onPress={() => toggleMember(member.id)}
                   disabled={isCurrentUser}
                 >
-                  <View style={[styles.memberAvatar, isSelected && styles.memberAvatarSelected]}>
-                    <Text style={[styles.memberAvatarText, isSelected && styles.memberAvatarTextSelected]}>
-                      {member.nickname[0]}
-                    </Text>
-                  </View>
+                  <Avatar
+                    nickname={member.nickname}
+                    profileImage={member.profileImage}
+                    size={36}
+                    fontSize={14}
+                    backgroundColor={isSelected ? colors.brand : colors.elevated}
+                    textColor={isSelected ? colors.foreground : colors.secondary}
+                  />
                   <View style={styles.memberInfo}>
                     <Text style={[styles.memberName, isSelected && styles.memberNameSelected]}>
                       {member.nickname}
@@ -586,25 +590,6 @@ const styles = StyleSheet.create({
   memberItemSelected: {
     borderColor: colors.brand,
     backgroundColor: colors.brandMuted,
-  },
-  memberAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarSelected: {
-    backgroundColor: colors.brand,
-  },
-  memberAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.secondary,
-  },
-  memberAvatarTextSelected: {
-    color: colors.foreground,
   },
   memberInfo: {
     flex: 1,

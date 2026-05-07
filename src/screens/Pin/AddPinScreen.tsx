@@ -26,6 +26,7 @@ import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
 // import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 // import Geolocation from '@react-native-community/geolocation';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
   CATEGORY_LABELS,
   PinCategory,
@@ -592,9 +593,13 @@ export default function AddPinScreen() {
                 style={[styles.payerChip, isSelected && styles.payerChipActive]}
                 onPress={() => setPaidBy(member.id)}
               >
-                <View style={[styles.payerAvatar, isSelected && styles.payerAvatarActive]}>
-                  <Text style={styles.payerAvatarText}>{member.nickname[0]}</Text>
-                </View>
+                <Avatar
+                  nickname={member.nickname}
+                  profileImage={member.profileImage}
+                  size={28}
+                  fontSize={12}
+                  backgroundColor={isSelected ? colors.brand : colors.elevated}
+                />
                 <Text style={[styles.payerName, isSelected && styles.payerNameActive]}>
                   {member.nickname}
                   {member.id === myId && ' (나)'}
@@ -667,9 +672,13 @@ export default function AddPinScreen() {
           return (
             <View key={member.id} style={styles.splitRow}>
               <View style={styles.splitUser}>
-                <View style={[styles.splitAvatar, isPayer && styles.splitAvatarPayer]}>
-                  <Text style={styles.splitAvatarText}>{member.nickname[0]}</Text>
-                </View>
+                <Avatar
+                  nickname={member.nickname}
+                  profileImage={member.profileImage}
+                  size={32}
+                  fontSize={13}
+                  backgroundColor={isPayer ? colors.brand : colors.elevated}
+                />
                 <View>
                   <Text style={styles.splitName}>
                     {member.nickname}
@@ -1273,22 +1282,6 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
     backgroundColor: colors.brandMuted,
   },
-  payerAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  payerAvatarActive: {
-    backgroundColor: colors.brand,
-  },
-  payerAvatarText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   payerName: {
     fontSize: 13,
     fontWeight: '500',
@@ -1402,22 +1395,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  splitAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splitAvatarPayer: {
-    backgroundColor: colors.brand,
-  },
-  splitAvatarText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   splitName: {
     fontSize: 14,
