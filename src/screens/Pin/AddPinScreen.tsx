@@ -224,7 +224,7 @@ export default function AddPinScreen() {
 
   const handleSelectPlace = (place: KakaoPlace) => {
     setSelectedPlace(place);
-    setLocationName(place.place_name);
+    setLocationName(place.name);
     setSearchQuery('');
     setSearchResults([]);
     setShowLocationModal(false);
@@ -502,7 +502,7 @@ export default function AddPinScreen() {
         <View style={styles.selectedLocationRow}>
           <View style={styles.selectedLocationInfo}>
             <MapPinIcon />
-            <Text style={styles.selectedLocationName}>{selectedPlace.place_name}</Text>
+            <Text style={styles.selectedLocationName}>{selectedPlace.name}</Text>
           </View>
           <TouchableOpacity onPress={handleClearPlace} style={styles.clearLocationButton}>
             <Text style={styles.clearLocationText}>삭제</Text>
@@ -565,8 +565,8 @@ export default function AddPinScreen() {
             >
               <MapPinIcon />
               <View style={styles.modalResultText}>
-                <Text style={styles.modalResultName}>{place.place_name}</Text>
-                <Text style={styles.modalResultAddress}>{place.road_address_name || place.address_name}</Text>
+                <Text style={styles.modalResultName}>{place.name}</Text>
+                <Text style={styles.modalResultAddress}>{place.roadAddress || place.address}</Text>
               </View>
             </TouchableOpacity>
           ))}
