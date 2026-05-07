@@ -1,93 +1,69 @@
 /**
- * Kakao Local API
- * 장소 검색 (키워드 검색)
+ * Place Search API
+ *
+ * 백엔드 /api/places/search 프록시 경유 — 카카오 REST API 키는 서버에서만 보유.
+ * 인증된 호출이므로 http.request() 가 access token 첨부 + 401 자동 refresh 처리.
  */
 
-// TODO: 배포 전 백엔드 프록시로 변경 필요
-// 환경 변수에서 API 키 로드 (react-native-config 또는 .env 사용)
-// @types/node 를 끌고 오지 않기 위해 process 의 최소 타입만 선언.
-declare const process: { env: { KAKAO_REST_API_KEY?: string } };
-const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || '';
+import { request, AuthApiError } from './http';
 
+// 백엔드 PlaceResponse 와 동일 모양. snake_case 필드 (place_name 등) 는 더 이상 노출하지 않음.
 export interface KakaoPlace {
   id: string;
-  place_name: string;
-  category_name: string;
-  address_name: string;
-  road_address_name: string;
-  x: string; // longitude
-  y: string; // latitude
-  phone?: string;
+  name: string;
+  category: string;
+  address: string;
+  roadAddress: string;
+  phone: string | null;
+  latitude: number;
+  longitude: number;
 }
 
-export interface KakaoSearchResponse {
-  documents: KakaoPlace[];
-  meta: {
-    total_count: number;
-    pageable_count: number;
-    is_end: boolean;
-  };
+interface BackendCoordinate {
+  latitude?: number;
+  longitude?: number;
+  radius?: number;
 }
 
-/**
- * 키워드로 장소 검색
- */
-export async function searchPlaces(query: string, page: number = 1): Promise<KakaoPlace[]> {
+async function searchByQuery(
+  query: string,
+  page: number,
+  coord?: BackendCoordinate,
+): Promise<KakaoPlace[]> {
   if (!query.trim()) return [];
 
+  const params = new URLSearchParams({ query, page: String(page) });
+  if (coord?.latitude !== undefined && coord?.longitude !== undefined) {
+    params.set('latitude', String(coord.latitude));
+    params.set('longitude', String(coord.longitude));
+    if (coord.radius !== undefined) params.set('radius', String(coord.radius));
+  }
+
   try {
-    const response = await fetch(
-      `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}&page=${page}&size=10`,
-      {
-        headers: {
-          Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.error('Kakao API error:', response.status);
-      return [];
+    return await request<KakaoPlace[]>(`/api/places/search?${params.toString()}`, {
+      method: 'GET',
+    });
+  } catch (err) {
+    if (err instanceof AuthApiError) {
+      console.warn('[places] search failed:', err.code, err.message);
+    } else {
+      console.warn('[places] network error');
     }
-
-    const data: KakaoSearchResponse = await response.json();
-    return data.documents;
-  } catch (error) {
-    console.error('Kakao search error:', error);
     return [];
   }
 }
 
-/**
- * 현재 위치 기준 주변 장소 검색
- */
+// 키워드 검색 (전국)
+export async function searchPlaces(query: string, page: number = 1): Promise<KakaoPlace[]> {
+  return searchByQuery(query, page, undefined);
+}
+
+// 좌표 기반 반경 검색
 export async function searchNearbyPlaces(
   query: string,
   latitude: number,
   longitude: number,
-  radius: number = 1000
+  radius: number = 1000,
 ): Promise<KakaoPlace[]> {
-  if (!query.trim()) return [];
-
-  try {
-    const response = await fetch(
-      `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}&x=${longitude}&y=${latitude}&radius=${radius}&page=1&size=10`,
-      {
-        headers: {
-          Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.error('Kakao API error:', response.status);
-      return [];
-    }
-
-    const data: KakaoSearchResponse = await response.json();
-    return data.documents;
-  } catch (error) {
-    console.error('Kakao search error:', error);
-    return [];
-  }
+  return searchByQuery(query, 1, { latitude, longitude, radius });
 }
