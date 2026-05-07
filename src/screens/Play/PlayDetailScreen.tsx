@@ -19,6 +19,7 @@ import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navig
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Circle, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
@@ -96,7 +97,6 @@ function PinCard({ pin, author, onPress, onPressAuthor }: PinCardProps) {
   const categoryColor = CATEGORY_COLORS[pin.category];
 
   const displayName = author?.nickname;
-  const displayInitial = author?.nickname?.[0];
 
   return (
     <TouchableOpacity style={styles.pinCard} onPress={onPress} activeOpacity={0.7}>
@@ -111,9 +111,12 @@ function PinCard({ pin, author, onPress, onPressAuthor }: PinCardProps) {
         {/* Author */}
         <View style={styles.pinAuthor}>
           <TouchableOpacity onPress={onPressAuthor} disabled={!onPressAuthor} activeOpacity={0.7}>
-            <View style={styles.authorAvatar}>
-              <Text style={styles.authorAvatarText}>{displayInitial}</Text>
-            </View>
+            <Avatar
+              nickname={author?.nickname ?? ''}
+              profileImage={author?.profileImage}
+              size={28}
+              fontSize={12}
+            />
           </TouchableOpacity>
           <TouchableOpacity onPress={onPressAuthor} disabled={!onPressAuthor} activeOpacity={0.7}>
             <Text style={styles.authorName}>{displayName}</Text>
@@ -261,9 +264,12 @@ export default function PlayDetailScreen() {
               <View style={styles.membersRow}>
                 {playMembers.map(member => (
                   <View key={member.id} style={styles.memberChip}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{member.nickname[0]}</Text>
-                    </View>
+                    <Avatar
+                      nickname={member.nickname}
+                      profileImage={member.profileImage}
+                      size={24}
+                      fontSize={11}
+                    />
                     <Text style={styles.memberName}>{member.nickname}</Text>
                   </View>
                 ))}
@@ -347,9 +353,13 @@ export default function PlayDetailScreen() {
 
           {selectedUser && (
             <View style={styles.profileContent}>
-              <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0] ?? '?'}</Text>
-              </View>
+              <Avatar
+                nickname={selectedUser.nickname}
+                profileImage={selectedUser.profileImage}
+                size={80}
+                fontSize={32}
+                style={styles.profileAvatarLargeSpacing}
+              />
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
               {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
             </View>
@@ -499,19 +509,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.xs,
   },
-  memberAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   memberName: {
     fontSize: 13,
     fontWeight: '500',
@@ -602,19 +599,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     gap: spacing.sm,
-  },
-  authorAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  authorAvatarText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   authorName: {
     fontSize: 13,
@@ -710,19 +694,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing['3xl'],
     paddingHorizontal: spacing.xl,
   },
-  profileAvatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileAvatarLargeSpacing: {
     marginBottom: spacing.md,
-  },
-  profileAvatarLargeText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   profileName: {
     fontSize: 20,
