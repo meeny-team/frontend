@@ -21,6 +21,8 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
+import { getAccessToken } from '../../auth/session';
+import { updateCurrentUser } from '../../api';
 
 // ============ Icons ============
 
@@ -60,7 +62,7 @@ const imageStyles = StyleSheet.create({
 export default function ProfileEditScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const { user, applyUser } = useAuth();
 
   const initialNickname = user?.nickname ?? '';
   const initialBio = user?.bio ?? '';
@@ -69,6 +71,7 @@ export default function ProfileEditScreen() {
   const [nickname, setNickname] = useState(initialNickname);
   const [bio, setBio] = useState(initialBio);
   const [imageUri, setImageUri] = useState<string | null>(initialImage);
+  const [saving, setSaving] = useState(false);
 
   const handlePickImage = useCallback(() => {
     Keyboard.dismiss();
@@ -100,8 +103,35 @@ export default function ProfileEditScreen() {
     });
   }, []);
 
-  const handleSave = () => {
-    // In real app, would save profile
+  // 프로필 저장: 변경된 필드만 PATCH /api/users/me 로 보냄. 게스트(토큰 없음)는 로컬 mock 만 갱신.
+  const handleSave = async () => {
+    if (saving) return;
+    const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
+    if (nickname !== initialNickname) patch.nickname = nickname.trim();
+    if (bio !== initialBio) patch.bio = bio;
+    if (imageUri !== initialImage && imageUri) patch.profileImage = imageUri;
+
+    if (!getAccessToken()) {
+      // 게스트 모드: 백엔드 호출 없이 화면만 닫는다.
+      navigation.goBack();
+      return;
+    }
+
+    setSaving(true);
+    const res = await updateCurrentUser(patch);
+    setSaving(false);
+    if (!res.data) {
+      Alert.alert('저장 실패', res.message ?? '프로필을 저장하지 못했습니다.');
+      return;
+    }
+    // 백엔드가 응답한 최신 프로필을 컨텍스트에 반영. id 가 number 인 MemberProfile 형식으로 채워서 호환.
+    applyUser({
+      id: Number(res.data.id),
+      nickname: res.data.nickname,
+      email: null,
+      profileImage: res.data.profileImage ?? null,
+      bio: res.data.bio ?? null,
+    });
     navigation.goBack();
   };
 
@@ -118,11 +148,13 @@ export default function ProfileEditScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>프로필 수정</Text>
         <TouchableOpacity
-          style={[styles.saveButton, !hasChanges && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!hasChanges || saving) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!hasChanges}
+          disabled={!hasChanges || saving}
         >
-          <Text style={[styles.saveText, !hasChanges && styles.saveTextDisabled]}>저장</Text>
+          <Text style={[styles.saveText, (!hasChanges || saving) && styles.saveTextDisabled]}>
+            {saving ? '저장 중...' : '저장'}
+          </Text>
         </TouchableOpacity>
       </View>
 

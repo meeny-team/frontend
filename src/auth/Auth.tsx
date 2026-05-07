@@ -38,6 +38,8 @@ interface AuthContextType {
   loginWithKakao: () => Promise<void>;
   loginAsGuest: () => void;
   logout: () => Promise<void>;
+  // 프로필 수정 후 백엔드에서 받은 최신 프로필을 그대로 반영. 게스트(토큰 없음)는 호출 의미가 없어 사용처에서 분기.
+  applyUser: (next: MemberProfile | User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -157,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithKakao,
         loginAsGuest,
         logout,
+        applyUser: setUser,
       }}
     >
       {children}
