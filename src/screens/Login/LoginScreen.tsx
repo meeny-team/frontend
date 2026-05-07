@@ -6,9 +6,14 @@
 import React from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { useAuth } from '../../auth/Auth';
+import { UnauthorizedStackParamList } from '../../navigation/UnauthorizedStack';
+
+type NavigationProp = NativeStackNavigationProp<UnauthorizedStackParamList>;
 
 const { width } = Dimensions.get('window');
 
@@ -65,6 +70,7 @@ function ArrowRightIcon() {
 
 export default function LoginScreen() {
   const { loginWithGoogle, loginWithKakao, loginAsGuest } = useAuth();
+  const navigation = useNavigation<NavigationProp>();
 
   const handleGoogle = () => {
     // 실패는 AuthProvider 가 console 로 남김. UI 토스트는 추후.
@@ -122,8 +128,21 @@ export default function LoginScreen() {
       {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.terms}>
-          시작하면 <Text style={styles.link}>이용약관</Text> 및{' '}
-          <Text style={styles.link}>개인정보처리방침</Text>에 동의합니다
+          시작하면{' '}
+          <Text
+            style={styles.link}
+            onPress={() => navigation.navigate('Legal', { type: 'terms' })}
+          >
+            이용약관
+          </Text>{' '}
+          및{' '}
+          <Text
+            style={styles.link}
+            onPress={() => navigation.navigate('Legal', { type: 'privacy' })}
+          >
+            개인정보처리방침
+          </Text>
+          에 동의합니다
         </Text>
       </View>
     </SafeAreaView>

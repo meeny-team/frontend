@@ -18,6 +18,7 @@ import PinDetailScreen from '../screens/Pin/PinDetailScreen';
 import SettlementScreen from '../screens/Settlement/SettlementScreen';
 import ProfileEditScreen from '../screens/ProfileEdit/ProfileEditScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
+import LegalScreen, { LegalType } from '../screens/Legal/LegalScreen';
 
 export type AuthorizedStackParamList = {
   Home: undefined;
@@ -31,6 +32,7 @@ export type AuthorizedStackParamList = {
   Settlement: { playId: string };
   Settings: undefined;
   ProfileEdit: undefined;
+  Legal: { type: LegalType };
 };
 
 const Stack = createNativeStackNavigator<AuthorizedStackParamList>();
@@ -66,6 +68,7 @@ export default function AuthorizedStack() {
       <Stack.Screen name="Settlement" component={SettlementScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+      <Stack.Screen name="Legal" component={LegalScreen} />
     </Stack.Navigator>
   );
 }
