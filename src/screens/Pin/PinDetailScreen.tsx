@@ -3,7 +3,7 @@
  * 핀 상세
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,7 +17,7 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Path, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
@@ -68,21 +68,23 @@ export default function PinDetailScreen() {
   const [play, setPlay] = useState<Play | null>(null);
   const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
 
-  useEffect(() => {
-    let canceled = false;
-    (async () => {
-      const pinRes = await fetchPinById(pinId);
-      if (canceled || !pinRes.data) return;
-      setPin(pinRes.data);
-      // 핀이 속한 플레이의 멤버 정보(닉네임 매핑) 가 필요해 같이 fetch
-      const playRes = await fetchPlayById(pinRes.data.playId);
-      if (canceled || !playRes.data) return;
-      setPlay(playRes.data);
-    })();
-    return () => {
-      canceled = true;
-    };
-  }, [pinId]);
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const pinRes = await fetchPinById(pinId);
+        if (canceled || !pinRes.data) return;
+        setPin(pinRes.data);
+        // 핀이 속한 플레이의 멤버 정보(닉네임 매핑) 가 필요해 같이 fetch
+        const playRes = await fetchPlayById(pinRes.data.playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [pinId]),
+  );
 
   // play.members 를 통해 임의의 userId → MemberSummary 매핑
   const memberMap = new Map((play?.members ?? []).map(m => [m.id, m]));
