@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../auth/Auth';
 import { getAccessToken } from '../../auth/session';
 import { withdrawCurrentUser } from '../../api';
@@ -103,9 +104,14 @@ export default function SettingsScreen() {
           onPress={() => navigation.navigate('ProfileEdit')}
           activeOpacity={0.6}
         >
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{nickname[0] ?? '?'}</Text>
-          </View>
+          <Avatar
+            nickname={nickname}
+            profileImage={user?.profileImage}
+            size={52}
+            backgroundColor={colors.surface}
+            textColor={colors.secondary}
+            fontSize={20}
+          />
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{nickname}</Text>
             <Text style={styles.profileSub}>프로필 수정</Text>
@@ -208,19 +214,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,
-  },
-  profileAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileAvatarText: {
-    fontSize: 20,
-    fontWeight: '500',
-    color: colors.secondary,
   },
   profileInfo: {
     flex: 1,

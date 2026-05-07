@@ -23,6 +23,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
   fetchCrewById,
   fetchPlaysByCrewId,
@@ -344,9 +345,13 @@ export default function CrewDetailScreen() {
                   style={styles.memberItem}
                   onPress={() => setSelectedUser(member)}
                 >
-                  <View style={styles.memberAvatar}>
-                    <Text style={styles.memberAvatarText}>{member.nickname[0] ?? '?'}</Text>
-                  </View>
+                  <Avatar
+                    nickname={member.nickname}
+                    profileImage={member.profileImage}
+                    size={48}
+                    fontSize={18}
+                    style={styles.memberAvatarSpacing}
+                  />
                   <Text style={styles.memberName}>{member.nickname}</Text>
                 </TouchableOpacity>
               ))}
@@ -409,9 +414,13 @@ export default function CrewDetailScreen() {
           {selectedUser && (
             <View style={styles.profileContent}>
               {/* Avatar */}
-              <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0] ?? '?'}</Text>
-              </View>
+              <Avatar
+                nickname={selectedUser.nickname}
+                profileImage={selectedUser.profileImage}
+                size={80}
+                fontSize={32}
+                style={styles.profileAvatarLargeSpacing}
+              />
 
               {/* Name */}
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
@@ -585,19 +594,8 @@ const styles = StyleSheet.create({
   memberItem: {
     alignItems: 'center',
   },
-  memberAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  memberAvatarSpacing: {
     marginBottom: spacing.xs,
-  },
-  memberAvatarText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   memberName: {
     fontSize: 12,
@@ -858,19 +856,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing['3xl'],
     paddingHorizontal: spacing.xl,
   },
-  profileAvatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileAvatarLargeSpacing: {
     marginBottom: spacing.md,
-  },
-  profileAvatarLargeText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   profileName: {
     fontSize: 20,
