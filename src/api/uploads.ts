@@ -61,7 +61,9 @@ export async function uploadPickedImage(
   });
 
   if (!putResponse.ok) {
-    throw new Error(`S3 업로드 실패 (${putResponse.status})`);
+    // S3 의 403/4xx 본문에는 <Code>SignatureDoesNotMatch</Code> 같은 진단 정보가 들어 있음
+    const detail = await putResponse.text().catch(() => '');
+    throw new Error(`S3 업로드 실패 (${putResponse.status}) ${detail}`.trim());
   }
 
   return presigned.publicUrl;
