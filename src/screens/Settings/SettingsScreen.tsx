@@ -123,12 +123,20 @@ export default function SettingsScreen() {
             <Text style={styles.menuValueText}>1.0.0</Text>
           </TouchableOpacity>
           <View style={styles.rowDivider} />
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.6}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => navigation.navigate('Legal', { type: 'terms' })}
+            activeOpacity={0.6}
+          >
             <Text style={styles.menuText}>이용약관</Text>
             <ChevronRightIcon />
           </TouchableOpacity>
           <View style={styles.rowDivider} />
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.6}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => navigation.navigate('Legal', { type: 'privacy' })}
+            activeOpacity={0.6}
+          >
             <Text style={styles.menuText}>개인정보 처리방침</Text>
             <ChevronRightIcon />
           </TouchableOpacity>
