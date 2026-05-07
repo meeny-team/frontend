@@ -5,6 +5,8 @@
 
 // TODO: 배포 전 백엔드 프록시로 변경 필요
 // 환경 변수에서 API 키 로드 (react-native-config 또는 .env 사용)
+// @types/node 를 끌고 오지 않기 위해 process 의 최소 타입만 선언.
+declare const process: { env: { KAKAO_REST_API_KEY?: string } };
 const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || '';
 
 export interface KakaoPlace {

@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
   },
   heroContent: {
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   smallOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   smallContent: {

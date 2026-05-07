@@ -20,6 +20,8 @@ import {
   fetchPlayById,
   fetchPinsByPlayId,
   fetchPlayTotalAmount,
+  fetchPlaySettlement,
+  closePlaySettlement,
   formatCurrency,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
@@ -121,6 +123,9 @@ export default function SettlementScreen() {
   const [play, setPlay] = useState<Play | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
+  // 백엔드의 settledAt(=정산 마감 시각). null 이면 마감 전. 마감 버튼/배지 분기 기준.
+  const [settledAt, setSettledAt] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -130,19 +135,48 @@ export default function SettlementScreen() {
         if (canceled || !playRes.data) return;
         setPlay(playRes.data);
 
-        const [pinsRes, totalRes] = await Promise.all([
+        const [pinsRes, totalRes, settlementRes] = await Promise.all([
           fetchPinsByPlayId(playId),
           fetchPlayTotalAmount(playId),
+          fetchPlaySettlement(playId),
         ]);
         if (canceled) return;
         setPins(pinsRes.data);
         setTotalAmount(totalRes.data);
+        setSettledAt(settlementRes.data?.settledAt ?? null);
       })();
       return () => {
         canceled = true;
       };
     }, [playId]),
   );
+
+  // 정산 마감: 백엔드가 모든 멤버 balance == 0 인지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
+  const handleClose = () => {
+    Alert.alert(
+      '정산 마감',
+      '정산을 마감하시겠습니까? 마감 후에는 핀과 정산 상태를 더 이상 수정할 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '마감',
+          style: 'destructive',
+          onPress: async () => {
+            if (closing) return;
+            setClosing(true);
+            const res = await closePlaySettlement(playId);
+            setClosing(false);
+            if (!res.data) {
+              Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettledAt(res.data.settledAt);
+            Alert.alert('정산 마감 완료', '정산이 마감되었습니다.');
+          },
+        },
+      ],
+    );
+  };
 
   // play.members 로 userId → MemberSummary 매핑 (별도 회원 조회 없이 닉네임 표시)
   const memberMap = useMemo(
@@ -599,6 +633,28 @@ export default function SettlementScreen() {
           </View>
         )}
 
+        {/* 마감: 백엔드가 모든 멤버 balance == 0 인지 검증한다. 마감 후에는 배지 표시. */}
+        <View style={styles.closeSection}>
+          {settledAt ? (
+            <View style={styles.closedBadge}>
+              <CheckIcon color={colors.positive} />
+              <Text style={styles.closedBadgeText}>
+                정산 마감됨 · {new Date(settledAt).toLocaleDateString('ko-KR')}
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.closeButton, closing && styles.closeButtonDisabled]}
+              onPress={handleClose}
+              disabled={closing}
+            >
+              <Text style={styles.closeButtonText}>
+                {closing ? '마감 처리 중...' : '정산 마감하기'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <View style={{ height: insets.bottom + spacing['3xl'] }} />
       </ScrollView>
     </View>
@@ -1041,5 +1097,39 @@ const styles = StyleSheet.create({
     color: colors.negative,
     textAlign: 'center',
     marginTop: 100,
+  },
+  closeSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  closeButton: {
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.brand,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+  },
+  closeButtonDisabled: {
+    opacity: 0.5,
+  },
+  closeButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.foreground,
+  },
+  closedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.positive,
+  },
+  closedBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.positive,
   },
 });

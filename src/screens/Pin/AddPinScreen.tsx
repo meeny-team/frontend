@@ -1164,7 +1164,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
 
   // Step 4: Settlement

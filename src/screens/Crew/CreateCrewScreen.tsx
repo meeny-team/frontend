@@ -92,10 +92,11 @@ export default function CreateCrewScreen() {
           return;
         }
 
-        if (response.assets?.[0]?.uri) {
+        const pickedUri = response.assets?.[0]?.uri;
+        if (pickedUri) {
           // 이미지 선택 완료 후 다음 프레임에서 상태 업데이트
           requestAnimationFrame(() => {
-            setImageUri(response.assets![0].uri);
+            setImageUri(pickedUri);
           });
         }
       }).catch(() => {
