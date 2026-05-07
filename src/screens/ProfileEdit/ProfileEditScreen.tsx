@@ -22,7 +22,7 @@ import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
 import { getAccessToken } from '../../auth/session';
-import { updateCurrentUser } from '../../api';
+import { updateCurrentUser, isUploadableImageUrl } from '../../api';
 
 // ============ Icons ============
 
@@ -110,7 +110,14 @@ export default function ProfileEditScreen() {
     const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
     if (nickname !== initialNickname) patch.nickname = nickname.trim();
     if (bio !== initialBio) patch.bio = bio;
-    if (imageUri !== initialImage && imageUri) patch.profileImage = imageUri;
+    // 이미지 업로드용 S3 가 아직 배포 전이라, 디바이스 로컬 경로(file://)는 백엔드에 보내지 않는다.
+    // 사용자가 새 이미지를 골랐어도 http(s) URL 이 아니면 변경 시도를 건너뛰고 안내 Alert.
+    const imageChanged = imageUri !== initialImage;
+    if (imageChanged && isUploadableImageUrl(imageUri)) {
+      patch.profileImage = imageUri;
+    } else if (imageChanged && imageUri && !isUploadableImageUrl(imageUri)) {
+      Alert.alert('이미지 변경 보류', '이미지 업로드는 곧 지원 예정입니다. 다른 항목만 저장할게요.');
+    }
 
     if (!getAccessToken()) {
       // 게스트 모드: 백엔드 호출 없이 화면만 닫는다.

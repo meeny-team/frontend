@@ -21,7 +21,7 @@ import { useNavigation } from '@react-navigation/native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Line, Circle } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { createCrew } from '../../api';
+import { createCrew, isUploadableImageUrl } from '../../api';
 
 // ============ Icons (메모이제이션) ============
 
@@ -111,10 +111,16 @@ export default function CreateCrewScreen() {
     Keyboard.dismiss();
     setIsLoading(true);
 
+    // S3 미배포 단계 — 디바이스 로컬 경로(file://)는 보내지 않고, http(s) URL 만 백엔드 저장.
+    const uploadableCover = isUploadableImageUrl(imageUri) ? imageUri : undefined;
+    if (imageUri && !uploadableCover) {
+      Alert.alert('이미지 보류', '커버 이미지 업로드는 곧 지원 예정입니다. 이미지 없이 크루를 먼저 만들게요.');
+    }
+
     try {
       const response = await createCrew({
         name: name.trim(),
-        coverImage: imageUri || undefined,
+        coverImage: uploadableCover,
       });
 
       if (response.status === 200) {

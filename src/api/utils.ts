@@ -52,3 +52,15 @@ export function generateInviteCode(): string {
     chars.charAt(Math.floor(Math.random() * chars.length))
   ).join('');
 }
+
+// ============================================
+// 이미지 URL 가드
+// ============================================
+
+// 이미지 업로드용 S3 가 아직 배포되지 않은 단계에서, 디바이스 로컬 경로(file://, content://)
+// 가 그대로 백엔드 DB 에 저장되는 회귀를 막기 위한 가드.
+// http(s) URL 만 백엔드로 전송 가능하다고 본다. S3 배포 이후엔 이 가드를 제거하고 업로드 흐름을 추가.
+export function isUploadableImageUrl(uri: string | null | undefined): uri is string {
+  if (!uri) return false;
+  return uri.startsWith('http://') || uri.startsWith('https://');
+}
