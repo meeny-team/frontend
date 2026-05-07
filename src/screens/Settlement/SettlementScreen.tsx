@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
@@ -484,9 +485,13 @@ export default function SettlementScreen() {
                       <View style={styles.payerInfo}>
                         <Text style={styles.payerLabel}>결제자</Text>
                         <View style={styles.payerUser}>
-                          <View style={styles.miniAvatar}>
-                            <Text style={styles.miniAvatarText}>{payer?.nickname[0]}</Text>
-                          </View>
+                          <Avatar
+                            nickname={payer?.nickname ?? ''}
+                            profileImage={payer?.profileImage}
+                            size={24}
+                            fontSize={11}
+                            backgroundColor={colors.brand}
+                          />
                           <Text style={styles.payerName}>{payer?.nickname}</Text>
                         </View>
                       </View>
@@ -503,9 +508,14 @@ export default function SettlementScreen() {
                             <View style={styles.settlementRow}>
                               {/* From User */}
                               <View style={styles.settlementUser}>
-                                <View style={[styles.userAvatar, isFromMe && styles.userAvatarMe]}>
-                                  <Text style={styles.userAvatarText}>{fromUser?.nickname[0]}</Text>
-                                </View>
+                                <Avatar
+                                  nickname={fromUser?.nickname ?? ''}
+                                  profileImage={fromUser?.profileImage}
+                                  size={36}
+                                  fontSize={14}
+                                  backgroundColor={colors.surface}
+                                  style={[styles.userAvatarSpacing, isFromMe && styles.userAvatarMe]}
+                                />
                                 <Text style={styles.settlementUserName}>
                                   {fromUser?.nickname}
                                   {isFromMe && <Text style={styles.meTag}> (나)</Text>}
@@ -525,9 +535,14 @@ export default function SettlementScreen() {
 
                               {/* To User */}
                               <View style={styles.settlementUser}>
-                                <View style={[styles.userAvatar, styles.userAvatarReceiver, isToMe && styles.userAvatarMe]}>
-                                  <Text style={styles.userAvatarText}>{toUser?.nickname[0]}</Text>
-                                </View>
+                                <Avatar
+                                  nickname={toUser?.nickname ?? ''}
+                                  profileImage={toUser?.profileImage}
+                                  size={36}
+                                  fontSize={14}
+                                  backgroundColor={colors.brandMuted}
+                                  style={[styles.userAvatarSpacing, isToMe && styles.userAvatarMe]}
+                                />
                                 <Text style={styles.settlementUserName}>
                                   {toUser?.nickname}
                                   {isToMe && <Text style={styles.meTag}> (나)</Text>}
@@ -886,19 +901,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  miniAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   payerName: {
     fontSize: 13,
     fontWeight: '600',
@@ -916,26 +918,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 70,
   },
-  userAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  userAvatarSpacing: {
     marginBottom: 4,
-  },
-  userAvatarReceiver: {
-    backgroundColor: colors.brandMuted,
   },
   userAvatarMe: {
     borderWidth: 2,
     borderColor: colors.brand,
-  },
-  userAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   settlementUserName: {
     fontSize: 12,
