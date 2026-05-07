@@ -230,9 +230,10 @@ export default function CrewDetailScreen() {
           return;
         }
 
-        if (response.assets?.[0]?.uri) {
+        const pickedUri = response.assets?.[0]?.uri;
+        if (pickedUri) {
           requestAnimationFrame(() => {
-            setCrewImageUri(response.assets![0].uri);
+            setCrewImageUri(pickedUri);
           });
         }
       }).catch(() => {

@@ -92,9 +92,10 @@ export default function ProfileEditScreen() {
           return;
         }
 
-        if (response.assets?.[0]?.uri) {
+        const pickedUri = response.assets?.[0]?.uri;
+        if (pickedUri) {
           requestAnimationFrame(() => {
-            setImageUri(response.assets![0].uri);
+            setImageUri(pickedUri);
           });
         }
       }).catch(() => {
