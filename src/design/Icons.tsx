@@ -3,7 +3,6 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
 import Svg, { Path, Circle, Rect, Polyline, Line } from 'react-native-svg';
 import { colors } from './token/colors';
 

@@ -37,13 +37,6 @@ type RouteProps = RouteProp<AuthorizedStackParamList, 'Settlement'>;
 // 정산 상태 타입
 type SettlementStatus = 'pending' | 'sent' | 'completed';
 
-// 각 정산 항목의 상태를 관리하기 위한 키
-interface SettlementItemKey {
-  pinId: string;
-  fromUserId: string;
-  toUserId: string;
-}
-
 interface SettlementItemState {
   status: SettlementStatus;
   sentAt?: string;
@@ -228,6 +221,7 @@ export default function SettlementScreen() {
         settlements,
       };
     }).filter(item => item.settlements.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getUserById 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pins]);
 
   // 전체 정산 통계 계산
@@ -238,7 +232,7 @@ export default function SettlementScreen() {
     let pendingAmount = 0;
     let completedAmount = 0;
 
-    pinSettlements.forEach(({ pin, settlements }) => {
+    pinSettlements.forEach(({ settlements }) => {
       settlements.forEach(s => {
         const state = getSettlementState(s.pinId, s.from, s.to);
         if (state.status === 'pending') {
@@ -256,6 +250,7 @@ export default function SettlementScreen() {
 
     const totalCount = pendingCount + sentCount + completedCount;
     return { pendingCount, sentCount, completedCount, totalCount, pendingAmount, completedAmount };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pinSettlements, settlementStates]);
 
   // 보내기 (발신자)
@@ -342,6 +337,7 @@ export default function SettlementScreen() {
         return state.status === 'completed';
       }),
     })).filter(item => item.settlements.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pinSettlements, activeTab, settlementStates]);
 
   if (!play) {

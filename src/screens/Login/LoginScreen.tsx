@@ -4,18 +4,16 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { useAuth } from '../../auth/Auth';
 import { UnauthorizedStackParamList } from '../../navigation/UnauthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<UnauthorizedStackParamList>;
-
-const { width } = Dimensions.get('window');
 
 // Kakao Icon
 function KakaoIcon() {

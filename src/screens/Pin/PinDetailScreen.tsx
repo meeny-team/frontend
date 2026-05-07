@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
-import Svg, { Path, Polyline, Line } from 'react-native-svg';
+import Svg, { Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
   fetchPinById,

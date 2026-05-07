@@ -13,7 +13,6 @@ import {
   TextInput,
   Animated,
   Dimensions,
-  Platform,
   Alert,
   ActivityIndicator,
   Modal,
@@ -94,11 +93,6 @@ const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 
 
 const MAX_PIN_IMAGES = 3;
 
-interface LocationCoords {
-  latitude: number;
-  longitude: number;
-}
-
 export default function AddPinScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -131,7 +125,6 @@ export default function AddPinScreen() {
   const [title, setTitle] = useState('');
   const [memo, setMemo] = useState('');
   const [locationName, setLocationName] = useState('');
-  const [locationCoords, setLocationCoords] = useState<LocationCoords | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<KakaoPlace | null>(null);
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string>(myId);
@@ -164,7 +157,7 @@ export default function AddPinScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [step]);
+  }, [step, progressAnim]);
 
   // Amount parsing
   const numericAmount = parseInt(amount.replace(/,/g, ''), 10) || 0;
@@ -363,7 +356,7 @@ export default function AddPinScreen() {
         },
       });
       navigation.goBack();
-    } catch (error) {
+    } catch {
       Alert.alert('오류', '핀 생성에 실패했습니다.');
     } finally {
       setSubmitting(false);
@@ -407,13 +400,6 @@ export default function AddPinScreen() {
     inputRange: [1, TOTAL_STEPS],
     outputRange: ['25%', '100%'],
   });
-
-  const handleMapRegionChange = (region: any) => {
-    setLocationCoords({
-      latitude: region.latitude,
-      longitude: region.longitude,
-    });
-  };
 
   // ============ Render Steps ============
 
