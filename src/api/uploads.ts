@@ -23,6 +23,7 @@ interface PresignedUpload {
   uploadUrl: string;
   objectKey: string;
   publicUrl: string;
+  contentType: string;
   expiresAt: string;
 }
 
@@ -43,13 +44,20 @@ export async function uploadPickedImage(
     body: { purpose, contentType },
   });
 
+  // S3 presigned PUT 은 X-Amz-SignedHeaders 에 host;content-type 을 포함해 서명되므로
+  // PUT 요청의 Content-Type 이 서명값과 정확히 같아야 한다 (다르면 403 SignatureDoesNotMatch).
+  // RN 의 fetch 는 body 가 Blob 이고 Blob.type 이 다른 값/빈값이면 헤더의 Content-Type 을
+  // Blob.type 으로 덮어쓰는 케이스가 있어, 서명값과 동일한 type 의 Blob 으로 다시 감싼다.
   const localResponse = await fetch(asset.uri);
-  const blob = await localResponse.blob();
+  const rawBlob = await localResponse.blob();
+  const body = rawBlob.type === presigned.contentType
+    ? rawBlob
+    : new Blob([rawBlob], { type: presigned.contentType });
 
   const putResponse = await fetch(presigned.uploadUrl, {
     method: 'PUT',
-    headers: { 'Content-Type': contentType },
-    body: blob,
+    headers: { 'Content-Type': presigned.contentType },
+    body,
   });
 
   if (!putResponse.ok) {
