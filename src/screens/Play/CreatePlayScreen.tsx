@@ -13,12 +13,11 @@ import {
   TextInput,
   Animated,
   Dimensions,
-  Platform,
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import Svg, { Line, Path, Polyline, Circle } from 'react-native-svg';
+import Svg, { Line, Polyline } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import {
   PLAY_TYPE_LABELS,
@@ -110,7 +109,7 @@ export default function CreatePlayScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [step]);
+  }, [step, progressAnim]);
 
   const toggleMember = (memberId: string) => {
     if (memberId === myId) return;
@@ -178,7 +177,7 @@ export default function CreatePlayScreen() {
         tags: customType ? [customType] : undefined,
       });
       navigation.goBack();
-    } catch (error) {
+    } catch {
       Alert.alert('오류', '플레이 생성에 실패했습니다.');
     }
   };
