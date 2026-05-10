@@ -11,8 +11,10 @@
  */
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { login as kakaoLogin, logout as kakaoLogout } from '@react-native-seoul/kakao-login';
+import appleAuth from '@invertase/react-native-apple-authentication';
 import { CURRENT_USER, User } from '../api';
 import {
   socialLogin,
@@ -36,6 +38,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithKakao: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
   loginAsGuest: () => void;
   logout: () => Promise<void>;
   // 프로필 수정 후 백엔드에서 받은 최신 프로필을 그대로 반영. 게스트(토큰 없음)는 호출 의미가 없어 사용처에서 분기.
@@ -123,8 +126,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithApple = async () => {
+    if (Platform.OS !== 'ios') {
+      throw new Error('Apple 로그인은 iOS 에서만 지원됩니다.');
+    }
+    try {
+      const response = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+      });
+      const { identityToken, fullName } = response;
+      if (!identityToken) {
+        throw new Error('Apple identity token 을 받지 못했습니다.');
+      }
+      // fullName 은 최초 동의 시에만 채워짐 — 백엔드는 nickname 없으면 자동 생성
+      const nickname = fullName?.givenName
+        ? `${fullName.familyName ?? ''}${fullName.givenName}`.trim()
+        : undefined;
+      const issued = await socialLogin('APPLE', identityToken, nickname);
+      await completeLogin(issued);
+    } catch (err) {
+      if ((err as { code?: string })?.code === appleAuth.Error.CANCELED) {
+        return;
+      }
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] apple sign-in failed:', err);
+      }
+      throw err;
+    }
+  };
+
   const loginAsGuest = () => {
-    // 애플 미구현 + "둘러보기": 백엔드 호출 없이 mock 사용자로 진입
+    // "둘러보기": 백엔드 호출 없이 mock 사용자로 진입
     setUser(CURRENT_USER);
   };
 
@@ -135,10 +170,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.warn('[auth] logout call failed:', err);
     }
-    try {
-      await GoogleSignin.signOut();
-    } catch {
-      /* 세션이 없을 수도 있음 */
+    // Google 은 Android 에서만 configure 됨. iOS 에서 signOut 부르면 네이티브 모듈이
+    // 미초기화 상태라 JS try/catch 로 못 잡는 크래시가 발생.
+    if (Platform.OS === 'android') {
+      try {
+        await GoogleSignin.signOut();
+      } catch {
+        /* 세션이 없을 수도 있음 */
+      }
     }
     try {
       await kakaoLogout();
@@ -157,6 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         loginWithGoogle,
         loginWithKakao,
+        loginWithApple,
         loginAsGuest,
         logout,
         applyUser: setUser,

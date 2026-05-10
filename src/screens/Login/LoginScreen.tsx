@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -67,7 +67,7 @@ function ArrowRightIcon() {
 }
 
 export default function LoginScreen() {
-  const { loginWithGoogle, loginWithKakao, loginAsGuest } = useAuth();
+  const { loginWithGoogle, loginWithKakao, loginWithApple, loginAsGuest } = useAuth();
   const navigation = useNavigation<NavigationProp>();
 
   const handleGoogle = () => {
@@ -77,6 +77,10 @@ export default function LoginScreen() {
 
   const handleKakao = () => {
     loginWithKakao().catch(() => undefined);
+  };
+
+  const handleApple = () => {
+    loginWithApple().catch(() => undefined);
   };
 
   return (
@@ -101,20 +105,24 @@ export default function LoginScreen() {
 
         {/* Login Buttons */}
         <View style={styles.buttonSection}>
-          <TouchableOpacity style={styles.googleButton} onPress={handleGoogle} activeOpacity={0.8}>
-            <GoogleIcon />
-            <Text style={styles.googleButtonText}>Google로 시작하기</Text>
-          </TouchableOpacity>
+          {Platform.OS === 'android' && (
+            <TouchableOpacity style={styles.googleButton} onPress={handleGoogle} activeOpacity={0.8}>
+              <GoogleIcon />
+              <Text style={styles.googleButtonText}>Google로 시작하기</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={styles.kakaoButton} onPress={handleKakao} activeOpacity={0.8}>
             <KakaoIcon />
             <Text style={styles.kakaoButtonText}>카카오로 시작하기</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.appleButton} onPress={loginAsGuest} activeOpacity={0.8}>
-            <AppleIcon />
-            <Text style={styles.appleButtonText}>Apple로 시작하기</Text>
-          </TouchableOpacity>
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity style={styles.appleButton} onPress={handleApple} activeOpacity={0.8}>
+              <AppleIcon />
+              <Text style={styles.appleButtonText}>Apple로 시작하기</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={styles.guestButton} onPress={loginAsGuest} activeOpacity={0.7}>
             <Text style={styles.guestButtonText}>둘러보기</Text>

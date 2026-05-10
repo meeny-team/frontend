@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { StatusBar, StyleSheet } from 'react-native';
+import { Platform, StatusBar, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
@@ -13,11 +13,13 @@ import Navigation from './src/navigation/Navigation';
 import { colors } from './src/design';
 import { GOOGLE_WEB_CLIENT_ID } from './src/config';
 
-// Google 로그인은 webClientId 가 있어야 ID token 의 audience 가 백엔드와 일치한다.
-// 모듈 로드 시 한 번만 설정.
-GoogleSignin.configure({
-  webClientId: GOOGLE_WEB_CLIENT_ID,
-});
+// Google 로그인은 Android 전용. iOS 에서 configure 호출 시 GoogleService-Info.plist
+// 또는 iosClientId 가 없으면 네이티브가 즉시 throw 하므로 platform 분기 필수.
+if (Platform.OS === 'android') {
+  GoogleSignin.configure({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+  });
+}
 
 function App() {
   return (
