@@ -1,13 +1,13 @@
 /**
  * Meeny - 환경 설정 모음
  *
- * 빌드 타임에 __DEV__ 로 dev/release 분기. release 빌드 전 PROD_API_BASE_URL 을 운영 도메인으로 교체.
+ * 디폴트로 운영 backend (api.meeny.store) 를 본다. 시뮬레이터/실기기에서 별도 설정 없이 바로
+ * 통합 동작 검증 가능. 로컬 backend 를 띄워 빠르게 반복 테스트할 때만 USE_LOCAL_BACKEND 를 켠다.
  * 시크릿(예: AWS access key)은 백엔드에 두고 클라이언트 환경변수로 노출하지 말 것.
  */
 
 import { Platform } from 'react-native';
 
-// release 빌드(__DEV__ === false) 시 사용.
 const PROD_API_BASE_URL = 'https://api.meeny.store';
 
 // Android emulator는 호스트의 localhost를 10.0.2.2로 봐야 한다.
@@ -16,7 +16,11 @@ const PROD_API_BASE_URL = 'https://api.meeny.store';
 const DEV_API_BASE_URL =
   Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 
-export const API_BASE_URL = __DEV__ ? DEV_API_BASE_URL : PROD_API_BASE_URL;
+// 로컬 backend (./gradlew bootRun) 띄워서 빠르게 반복 테스트할 때만 true 로. 평소엔 false.
+const USE_LOCAL_BACKEND = false;
+
+export const API_BASE_URL =
+  __DEV__ && USE_LOCAL_BACKEND ? DEV_API_BASE_URL : PROD_API_BASE_URL;
 
 // Google OAuth: ID token의 audience로 쓰이는 Web Client ID.
 // 백엔드의 GOOGLE_CLIENT_IDS 에 이 값이 포함되어 있어야 audience 검증 통과.
