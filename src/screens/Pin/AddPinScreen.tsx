@@ -13,11 +13,12 @@ import {
   TextInput,
   Animated,
   Dimensions,
-  Platform,
   Alert,
   ActivityIndicator,
   Modal,
+  Image,
 } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
@@ -25,16 +26,18 @@ import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
 // import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 // import Geolocation from '@react-native-community/geolocation';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
   CATEGORY_LABELS,
   PinCategory,
-  CURRENT_USER,
+  Play,
+  fetchPlayById,
   createPin,
+  uploadPickedImage,
+  PickedImageAsset,
 } from '../../api';
 import { searchPlaces, KakaoPlace } from '../../api/kakao';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'AddPin'>;
@@ -87,39 +90,55 @@ function MapPinIcon() {
   );
 }
 
-const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity', 'etc'];
+const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity'];
 
-interface LocationCoords {
-  latitude: number;
-  longitude: number;
-}
+const MAX_PIN_IMAGES = 3;
 
 export default function AddPinScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : '';
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const members = useMemo(() => {
-    if (!play) return [];
-    return play.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [play]);
+  const [play, setPlay] = useState<Play | null>(null);
+  // 결제자/분담자 후보는 play 의 멤버. 백엔드도 play 멤버로 검증.
+  const members = useMemo(() => play?.members ?? [], [play]);
+
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const res = await fetchPlayById(playId);
+      if (canceled || !res.data) return;
+      setPlay(res.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
 
   // Form state
   const [step, setStep] = useState(1);
   const [category, setCategory] = useState<PinCategory | null>(null);
+  const [customCategory, setCustomCategory] = useState('');
   const [title, setTitle] = useState('');
   const [memo, setMemo] = useState('');
   const [locationName, setLocationName] = useState('');
-  const [locationCoords, setLocationCoords] = useState<LocationCoords | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<KakaoPlace | null>(null);
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState<string>(CURRENT_USER.id);
-  const [participants, setParticipants] = useState<Set<string>>(
-    new Set(members.map(m => m?.id).filter(Boolean) as string[])
-  );
+  const [paidBy, setPaidBy] = useState<string>(myId);
+  const [participants, setParticipants] = useState<Set<string>>(new Set());
+  // 선택한 이미지 자산 (최대 MAX_IMAGES). createPin 호출 시 모두 업로드되어 publicUrl 로 변환된다.
+  const [pickedAssets, setPickedAssets] = useState<PickedImageAsset[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  // play 가 로드되면 모든 멤버를 분담자 기본 선택
+  useEffect(() => {
+    if (members.length === 0) return;
+    setParticipants(new Set(members.map(m => m.id)));
+  }, [members]);
   const [settlementType, setSettlementType] = useState<'equal' | 'custom'>('equal');
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
 
@@ -139,7 +158,7 @@ export default function AddPinScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [step]);
+  }, [step, progressAnim]);
 
   // Amount parsing
   const numericAmount = parseInt(amount.replace(/,/g, ''), 10) || 0;
@@ -173,7 +192,7 @@ export default function AddPinScreen() {
   };
 
   const selectAllParticipants = () => {
-    setParticipants(new Set(members.map(m => m?.id).filter(Boolean) as string[]));
+    setParticipants(new Set(members.map(m => m.id)));
   };
 
   const handleCustomSplitChange = (userId: string, value: string) => {
@@ -199,7 +218,7 @@ export default function AddPinScreen() {
 
   const handleSelectPlace = (place: KakaoPlace) => {
     setSelectedPlace(place);
-    setLocationName(place.place_name);
+    setLocationName(place.name);
     setSearchQuery('');
     setSearchResults([]);
     setShowLocationModal(false);
@@ -265,8 +284,55 @@ export default function AddPinScreen() {
     }
   };
 
+  // 이미지 선택: 남은 슬롯만큼 multi-select. uri/type/fileName 만 보관하고 업로드는 제출 시점.
+  const handlePickImages = useCallback(() => {
+    if (pickedAssets.length >= MAX_PIN_IMAGES) {
+      Alert.alert('알림', `사진은 최대 ${MAX_PIN_IMAGES}장까지 선택할 수 있습니다.`);
+      return;
+    }
+    launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      selectionLimit: MAX_PIN_IMAGES - pickedAssets.length,
+      includeBase64: false,
+    }).then(response => {
+      if (response.didCancel || response.errorCode) {
+        if (response.errorCode === 'permission') {
+          Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
+        }
+        return;
+      }
+      const newAssets: PickedImageAsset[] = (response.assets ?? [])
+        .filter(a => !!a.uri)
+        .map(a => ({ uri: a.uri!, type: a.type ?? null, fileName: a.fileName ?? null }));
+      setPickedAssets(prev => [...prev, ...newAssets].slice(0, MAX_PIN_IMAGES));
+    }).catch(() => {
+      Alert.alert('오류', '이미지를 선택할 수 없습니다.');
+    });
+  }, [pickedAssets.length]);
+
+  const handleRemoveImage = useCallback((index: number) => {
+    setPickedAssets(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleCreate = async () => {
-    if (!category) return;
+    if (!category || submitting) return;
+
+    setSubmitting(true);
+
+    let imageUrls: string[] | undefined;
+    if (pickedAssets.length > 0) {
+      try {
+        imageUrls = await Promise.all(pickedAssets.map(a => uploadPickedImage(a, 'PIN')));
+      } catch (e) {
+        setSubmitting(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
 
     try {
       const splits = selectedParticipants.map(m => ({
@@ -283,6 +349,7 @@ export default function AddPinScreen() {
         title: title.trim(),
         memo: memo.trim() || undefined,
         location: locationName.trim() || undefined,
+        images: imageUrls,
         settlement: {
           type: settlementType,
           paidBy,
@@ -290,15 +357,18 @@ export default function AddPinScreen() {
         },
       });
       navigation.goBack();
-    } catch (error) {
+    } catch {
       Alert.alert('오류', '핀 생성에 실패했습니다.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const canProceed = () => {
     switch (step) {
       case 1:
-        return category !== null && title.trim().length > 0;
+        const hasCategory = category !== null || customCategory.trim().length > 0;
+        return hasCategory && title.trim().length > 0;
       case 2:
         const isSettlementValid = settlementType === 'equal' || customTotal === numericAmount;
         return participantCount > 0 && isSettlementValid;
@@ -317,19 +387,20 @@ export default function AddPinScreen() {
 
   const handleCategorySelect = (cat: PinCategory) => {
     setCategory(cat);
+    setCustomCategory('');
+  };
+
+  const handleCustomCategoryChange = (text: string) => {
+    setCustomCategory(text);
+    if (text.trim().length > 0) {
+      setCategory(null);
+    }
   };
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [1, TOTAL_STEPS],
     outputRange: ['25%', '100%'],
   });
-
-  const handleMapRegionChange = (region: any) => {
-    setLocationCoords({
-      latitude: region.latitude,
-      longitude: region.longitude,
-    });
-  };
 
   // ============ Render Steps ============
 
@@ -339,16 +410,24 @@ export default function AddPinScreen() {
       <Text style={styles.inputLabel}>사진</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
         <View style={styles.imageRow}>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-            <Text style={styles.imageAddText}>사진 추가</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.imageAddButton}>
-            <Text style={styles.imageAddIcon}>+</Text>
-          </TouchableOpacity>
+          {pickedAssets.map((asset, idx) => (
+            <View key={`${asset.uri}-${idx}`} style={styles.imageSlot}>
+              <Image source={{ uri: asset.uri }} style={styles.imageThumb} />
+              <TouchableOpacity
+                style={styles.imageRemoveBtn}
+                onPress={() => handleRemoveImage(idx)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.imageRemoveText}>×</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+          {pickedAssets.length < MAX_PIN_IMAGES && (
+            <TouchableOpacity style={styles.imageAddButton} onPress={handlePickImages}>
+              <Text style={styles.imageAddIcon}>+</Text>
+              {pickedAssets.length === 0 && <Text style={styles.imageAddText}>사진 추가</Text>}
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -378,6 +457,16 @@ export default function AddPinScreen() {
               </Text>
             </TouchableOpacity>
           ))}
+          <View style={[styles.categoryChip, styles.customCategoryChip, customCategory.trim().length > 0 && styles.categoryChipActive]}>
+            <TextInput
+              style={styles.customCategoryChipInput}
+              placeholder="직접 입력"
+              placeholderTextColor={colors.muted}
+              value={customCategory}
+              onChangeText={handleCustomCategoryChange}
+              maxLength={10}
+            />
+          </View>
         </View>
       </ScrollView>
 
@@ -400,7 +489,7 @@ export default function AddPinScreen() {
         <View style={styles.selectedLocationRow}>
           <View style={styles.selectedLocationInfo}>
             <MapPinIcon />
-            <Text style={styles.selectedLocationName}>{selectedPlace.place_name}</Text>
+            <Text style={styles.selectedLocationName}>{selectedPlace.name}</Text>
           </View>
           <TouchableOpacity onPress={handleClearPlace} style={styles.clearLocationButton}>
             <Text style={styles.clearLocationText}>삭제</Text>
@@ -463,8 +552,8 @@ export default function AddPinScreen() {
             >
               <MapPinIcon />
               <View style={styles.modalResultText}>
-                <Text style={styles.modalResultName}>{place.place_name}</Text>
-                <Text style={styles.modalResultAddress}>{place.road_address_name || place.address_name}</Text>
+                <Text style={styles.modalResultName}>{place.name}</Text>
+                <Text style={styles.modalResultAddress}>{place.roadAddress || place.address}</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -504,12 +593,16 @@ export default function AddPinScreen() {
                 style={[styles.payerChip, isSelected && styles.payerChipActive]}
                 onPress={() => setPaidBy(member.id)}
               >
-                <View style={[styles.payerAvatar, isSelected && styles.payerAvatarActive]}>
-                  <Text style={styles.payerAvatarText}>{member.nickname[0]}</Text>
-                </View>
+                <Avatar
+                  nickname={member.nickname}
+                  profileImage={member.profileImage}
+                  size={28}
+                  fontSize={12}
+                  backgroundColor={isSelected ? colors.brand : colors.elevated}
+                />
                 <Text style={[styles.payerName, isSelected && styles.payerNameActive]}>
                   {member.nickname}
-                  {member.id === CURRENT_USER.id && ' (나)'}
+                  {member.id === myId && ' (나)'}
                 </Text>
               </TouchableOpacity>
             );
@@ -539,7 +632,7 @@ export default function AddPinScreen() {
               </View>
               <Text style={[styles.participantName, isSelected && styles.participantNameActive]}>
                 {member.nickname}
-                {member.id === CURRENT_USER.id && ' (나)'}
+                {member.id === myId && ' (나)'}
               </Text>
             </TouchableOpacity>
           );
@@ -574,14 +667,18 @@ export default function AddPinScreen() {
         {selectedParticipants.map(member => {
           if (!member) return null;
           const isPayer = member.id === paidBy;
-          const isCurrentUser = member.id === CURRENT_USER.id;
+          const isCurrentUser = member.id === myId;
 
           return (
             <View key={member.id} style={styles.splitRow}>
               <View style={styles.splitUser}>
-                <View style={[styles.splitAvatar, isPayer && styles.splitAvatarPayer]}>
-                  <Text style={styles.splitAvatarText}>{member.nickname[0]}</Text>
-                </View>
+                <Avatar
+                  nickname={member.nickname}
+                  profileImage={member.profileImage}
+                  size={32}
+                  fontSize={13}
+                  backgroundColor={isPayer ? colors.brand : colors.elevated}
+                />
                 <View>
                   <Text style={styles.splitName}>
                     {member.nickname}
@@ -628,7 +725,7 @@ export default function AddPinScreen() {
     </ScrollView>
   );
 
-  if (!play || !crew) {
+  if (!play) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>플레이를 찾을 수 없습니다</Text>
@@ -815,6 +912,35 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  imageSlot: {
+    width: 100,
+    height: 100,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  imageThumb: {
+    width: '100%',
+    height: '100%',
+    borderRadius: radius.lg,
+  },
+  imageRemoveBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageRemoveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 16,
   },
   imageAddIcon: {
     fontSize: 28,
@@ -1129,7 +1255,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
 
   // Step 4: Settlement
@@ -1155,22 +1281,6 @@ const styles = StyleSheet.create({
   payerChipActive: {
     borderColor: colors.brand,
     backgroundColor: colors.brandMuted,
-  },
-  payerAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  payerAvatarActive: {
-    backgroundColor: colors.brand,
-  },
-  payerAvatarText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   payerName: {
     fontSize: 13,
@@ -1285,22 +1395,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  splitAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splitAvatarPayer: {
-    backgroundColor: colors.brand,
-  },
-  splitAvatarText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   splitName: {
     fontSize: 14,

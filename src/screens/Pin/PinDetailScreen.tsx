@@ -3,7 +3,7 @@
  * 핀 상세
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,21 +17,22 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import Svg, { Path, Polyline, Line } from 'react-native-svg';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
+import Svg, { Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getUserById,
-  getPlayById,
+  fetchPinById,
+  fetchPlayById,
   formatCurrency,
   formatDate,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
-  CURRENT_USER,
   Pin,
-  User,
-  DUMMY_PINS,
+  Play,
+  MemberSummary,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PinDetail'>;
@@ -55,33 +56,46 @@ function XIcon() {
   );
 }
 
-function getPinById(pinId: string): Pin | undefined {
-  return DUMMY_PINS.find(p => p.id === pinId);
-}
-
 export default function PinDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { pinId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number 라 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
-  const pin = getPinById(pinId);
-  const author = pin ? getUserById(pin.authorId) : undefined;
-  const play = pin ? getPlayById(pin.playId) : undefined;
+  const [pin, setPin] = useState<Pin | null>(null);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const pinRes = await fetchPinById(pinId);
+        if (canceled || !pinRes.data) return;
+        setPin(pinRes.data);
+        // 핀이 속한 플레이의 멤버 정보(닉네임 매핑) 가 필요해 같이 fetch
+        const playRes = await fetchPlayById(pinRes.data.playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [pinId]),
+  );
+
+  // play.members 를 통해 임의의 userId → MemberSummary 매핑
+  const memberMap = new Map((play?.members ?? []).map(m => [m.id, m]));
+  const author = pin ? memberMap.get(pin.authorId) : undefined;
   const categoryColor = pin ? CATEGORY_COLORS[pin.category] : colors.muted;
 
-  // Get display name for any user
-  const getDisplayName = (userId: string) => {
-    return getUserById(userId)?.nickname || '알 수 없음';
-  };
+  const getDisplayName = (userId: string) => memberMap.get(userId)?.nickname ?? '알 수 없음';
+  const getProfileImage = (userId: string) => memberMap.get(userId)?.profileImage;
 
-  const getDisplayInitial = (userId: string) => {
-    return getDisplayName(userId)[0];
-  };
-
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-
-  if (!pin || !author) {
+  if (!pin) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>핀을 찾을 수 없습니다</Text>
@@ -105,9 +119,12 @@ export default function PinDetailScreen() {
           }}
           disabled={!author}
         >
-          <View style={styles.authorAvatar}>
-            <Text style={styles.authorAvatarText}>{getDisplayInitial(pin.authorId)}</Text>
-          </View>
+          <Avatar
+            nickname={getDisplayName(pin.authorId)}
+            profileImage={getProfileImage(pin.authorId)}
+            size={36}
+            fontSize={14}
+          />
           <View>
             <Text style={styles.authorName}>{getDisplayName(pin.authorId)}</Text>
             <Text style={styles.authorTime}>{formatDate(pin.createdAt)}</Text>
@@ -171,14 +188,16 @@ export default function PinDetailScreen() {
               <View style={styles.payerInfo}>
                 <Text style={styles.payerLabel}>결제자</Text>
                 <View style={styles.payerInfoRow}>
-                  <View style={styles.payerInfoAvatar}>
-                    <Text style={styles.payerInfoAvatarText}>
-                      {getDisplayInitial(pin.settlement.paidBy)}
-                    </Text>
-                  </View>
+                  <Avatar
+                    nickname={getDisplayName(pin.settlement.paidBy)}
+                    profileImage={getProfileImage(pin.settlement.paidBy)}
+                    size={32}
+                    fontSize={13}
+                    backgroundColor={colors.brand}
+                  />
                   <Text style={styles.payerInfoName}>
                     {getDisplayName(pin.settlement.paidBy)}
-                    {pin.settlement.paidBy === CURRENT_USER.id && ' (나)'}
+                    {pin.settlement.paidBy === myId && ' (나)'}
                   </Text>
                   <Text style={styles.payerInfoAmount}>{formatCurrency(pin.amount)}</Text>
                 </View>
@@ -190,14 +209,18 @@ export default function PinDetailScreen() {
                   {pin.settlement.type === 'equal' ? '1/N' : '커스텀'} · {pin.settlement.splits?.length || 0}명
                 </Text>
                 {pin.settlement.splits?.map(split => {
-                  const isCurrentUser = split.userId === CURRENT_USER.id;
+                  const isCurrentUser = split.userId === myId;
                   const isPayer = split.userId === pin.settlement.paidBy;
                   return (
                     <View key={split.userId} style={styles.splitItem}>
                       <View style={styles.splitItemUser}>
-                        <View style={[styles.splitItemAvatar, isPayer && styles.splitItemAvatarPayer]}>
-                          <Text style={styles.splitItemAvatarText}>{getDisplayInitial(split.userId)}</Text>
-                        </View>
+                        <Avatar
+                          nickname={getDisplayName(split.userId)}
+                          profileImage={getProfileImage(split.userId)}
+                          size={28}
+                          fontSize={11}
+                          backgroundColor={isPayer ? colors.brand : colors.elevated}
+                        />
                         <Text style={styles.splitItemName}>
                           {getDisplayName(split.userId)}
                           {isCurrentUser && ' (나)'}
@@ -235,15 +258,15 @@ export default function PinDetailScreen() {
 
           {selectedUser && (
             <View style={styles.profileContent}>
-              <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
-              </View>
+              <Avatar
+                nickname={selectedUser.nickname}
+                profileImage={selectedUser.profileImage}
+                size={80}
+                fontSize={32}
+                style={styles.profileAvatarLargeSpacing}
+              />
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
             </View>
           )}
         </View>
@@ -274,19 +297,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: spacing.sm,
     gap: spacing.sm,
-  },
-  authorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  authorAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   authorName: {
     fontSize: 14,
@@ -401,19 +411,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  payerInfoAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  payerInfoAvatarText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   payerInfoName: {
     flex: 1,
     fontSize: 14,
@@ -450,22 +447,6 @@ const styles = StyleSheet.create({
   splitItemUser: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  splitItemAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splitItemAvatarPayer: {
-    backgroundColor: colors.brand,
-  },
-  splitItemAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   splitItemName: {
     fontSize: 13,
@@ -514,19 +495,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing['3xl'],
     paddingHorizontal: spacing.xl,
   },
-  profileAvatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileAvatarLargeSpacing: {
     marginBottom: spacing.md,
-  },
-  profileAvatarLargeText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   profileName: {
     fontSize: 20,

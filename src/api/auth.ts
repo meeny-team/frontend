@@ -1,50 +1,60 @@
-import { apiRequest, setTokens, getRefreshToken, clearTokens } from './client';
+/**
+ * Meeny - 백엔드 Auth API
+ *
+ * 공통 fetch/401 인터셉트는 http.ts 가 담당. 본 모듈은 auth 도메인 호출만.
+ */
 
-interface SocialLoginRequest {
-  provider: 'KAKAO' | 'GOOGLE' | 'APPLE';
-  token: string;
-  nickname?: string;
-}
+import { request, AuthApiError, registerRefreshFn } from './http';
 
-interface TokenResponse {
+export { AuthApiError };
+
+export type SocialProvider = 'GOOGLE' | 'KAKAO' | 'APPLE';
+
+export interface TokenResponse {
   accessToken: string;
   refreshToken: string;
 }
 
-export async function socialLogin(params: SocialLoginRequest): Promise<void> {
-  const tokens = await apiRequest<TokenResponse>('/api/auth/social', {
+export async function socialLogin(
+  provider: SocialProvider,
+  token: string,
+  nickname?: string,
+): Promise<TokenResponse> {
+  return request<TokenResponse>('/api/auth/social', {
     method: 'POST',
-    body: JSON.stringify(params),
+    body: { provider, token, nickname },
+    auth: false,
   });
-  await setTokens(tokens.accessToken, tokens.refreshToken);
 }
 
-export async function refreshAccessToken(): Promise<TokenResponse | null> {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) return null;
-
-  try {
-    const tokens = await apiRequest<TokenResponse>('/api/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-    await setTokens(tokens.accessToken, tokens.refreshToken);
-    return tokens;
-  } catch {
-    await clearTokens();
-    return null;
-  }
+export async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
+  return request<TokenResponse>('/api/auth/refresh', {
+    method: 'POST',
+    body: { refreshToken },
+    auth: false,
+  });
 }
 
-export async function logoutBackend(): Promise<void> {
-  const refreshToken = await getRefreshToken();
-  if (!refreshToken) return;
-  try {
-    await apiRequest<void>('/api/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    });
-  } catch {
-    // 백엔드 호출 실패해도 로컬 로그아웃은 진행
-  }
+export async function logout(refreshToken: string): Promise<void> {
+  await request<void>('/api/auth/logout', {
+    method: 'POST',
+    body: { refreshToken },
+    auth: false,
+  });
+}
+
+// http 모듈에 refresh 함수를 등록 — 401 자동 재시도 시 사용.
+// 모듈 로드 시점에 한 번만 실행.
+registerRefreshFn(refreshTokens);
+
+export interface MemberProfile {
+  id: number;
+  nickname: string;
+  email: string | null;
+  profileImage: string | null;
+  bio: string | null;
+}
+
+export async function fetchMe(): Promise<MemberProfile> {
+  return request<MemberProfile>('/api/users/me', { method: 'GET' });
 }

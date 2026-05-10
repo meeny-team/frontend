@@ -3,7 +3,7 @@
  * 정산 현황 - 핀 단위 상세 보기 + 양방향 확인
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,35 +13,30 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
-  getPinsByPlayId,
-  getPlayTotalAmount,
-  getPlayAverageAmount,
+  fetchPlayById,
+  fetchPinsByPlayId,
+  fetchPlayTotalAmount,
+  fetchPlaySettlement,
+  closePlaySettlement,
   formatCurrency,
-  CURRENT_USER,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
+  Play,
+  MemberSummary,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'Settlement'>;
 
 // 정산 상태 타입
 type SettlementStatus = 'pending' | 'sent' | 'completed';
-
-// 각 정산 항목의 상태를 관리하기 위한 키
-interface SettlementItemKey {
-  pinId: string;
-  fromUserId: string;
-  toUserId: string;
-}
 
 interface SettlementItemState {
   status: SettlementStatus;
@@ -115,12 +110,76 @@ export default function SettlementScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const pins = getPinsByPlayId(playId);
-  const totalAmount = getPlayTotalAmount(playId);
-  const avgAmount = getPlayAverageAmount(playId);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
+  // 백엔드의 settledAt(=정산 마감 시각). null 이면 마감 전. 마감 버튼/배지 분기 기준.
+  const [settledAt, setSettledAt] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const playRes = await fetchPlayById(playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
+
+        const [pinsRes, totalRes, settlementRes] = await Promise.all([
+          fetchPinsByPlayId(playId),
+          fetchPlayTotalAmount(playId),
+          fetchPlaySettlement(playId),
+        ]);
+        if (canceled) return;
+        setPins(pinsRes.data);
+        setTotalAmount(totalRes.data);
+        setSettledAt(settlementRes.data?.settledAt ?? null);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [playId]),
+  );
+
+  // 정산 마감: 백엔드가 모든 멤버 balance == 0 인지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
+  const handleClose = () => {
+    Alert.alert(
+      '정산 마감',
+      '정산을 마감하시겠습니까? 마감 후에는 핀과 정산 상태를 더 이상 수정할 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '마감',
+          style: 'destructive',
+          onPress: async () => {
+            if (closing) return;
+            setClosing(true);
+            const res = await closePlaySettlement(playId);
+            setClosing(false);
+            if (!res.data) {
+              Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettledAt(res.data.settledAt);
+            Alert.alert('정산 마감 완료', '정산이 마감되었습니다.');
+          },
+        },
+      ],
+    );
+  };
+
+  // play.members 로 userId → MemberSummary 매핑 (별도 회원 조회 없이 닉네임 표시)
+  const memberMap = useMemo(
+    () => new Map((play?.members ?? []).map(m => [m.id, m] as const)),
+    [play],
+  );
+  const getUserById = (id: string): MemberSummary | undefined => memberMap.get(id);
+  const memberCount = play?.members.length ?? 0;
+  const avgAmount = memberCount > 0 ? Math.floor(totalAmount / memberCount) : 0;
 
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedPins, setExpandedPins] = useState<Set<string>>(new Set());
@@ -163,6 +222,7 @@ export default function SettlementScreen() {
         settlements,
       };
     }).filter(item => item.settlements.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getUserById 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pins]);
 
   // 전체 정산 통계 계산
@@ -173,7 +233,7 @@ export default function SettlementScreen() {
     let pendingAmount = 0;
     let completedAmount = 0;
 
-    pinSettlements.forEach(({ pin, settlements }) => {
+    pinSettlements.forEach(({ settlements }) => {
       settlements.forEach(s => {
         const state = getSettlementState(s.pinId, s.from, s.to);
         if (state.status === 'pending') {
@@ -191,6 +251,7 @@ export default function SettlementScreen() {
 
     const totalCount = pendingCount + sentCount + completedCount;
     return { pendingCount, sentCount, completedCount, totalCount, pendingAmount, completedAmount };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pinSettlements, settlementStates]);
 
   // 보내기 (발신자)
@@ -277,9 +338,10 @@ export default function SettlementScreen() {
         return state.status === 'completed';
       }),
     })).filter(item => item.settlements.length > 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
   }, [pinSettlements, activeTab, settlementStates]);
 
-  if (!play || !crew) {
+  if (!play) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <Text style={styles.errorText}>플레이를 찾을 수 없습니다</Text>
@@ -306,7 +368,7 @@ export default function SettlementScreen() {
         {/* Play Info */}
         <View style={styles.playInfo}>
           <Text style={styles.playTitle}>{play.title}</Text>
-          <Text style={styles.crewName}>{crew.name}</Text>
+          {/* 크루 이름은 별도 호출이 필요해 이번 단계에선 생략. 필요 시 fetchCrewById 추가. */}
         </View>
 
         {/* Stats */}
@@ -423,9 +485,13 @@ export default function SettlementScreen() {
                       <View style={styles.payerInfo}>
                         <Text style={styles.payerLabel}>결제자</Text>
                         <View style={styles.payerUser}>
-                          <View style={styles.miniAvatar}>
-                            <Text style={styles.miniAvatarText}>{payer?.nickname[0]}</Text>
-                          </View>
+                          <Avatar
+                            nickname={payer?.nickname ?? ''}
+                            profileImage={payer?.profileImage}
+                            size={24}
+                            fontSize={11}
+                            backgroundColor={colors.brand}
+                          />
                           <Text style={styles.payerName}>{payer?.nickname}</Text>
                         </View>
                       </View>
@@ -434,17 +500,22 @@ export default function SettlementScreen() {
                         const fromUser = getUserById(settlement.from);
                         const toUser = getUserById(settlement.to);
                         const state = getSettlementState(settlement.pinId, settlement.from, settlement.to);
-                        const isFromMe = settlement.from === CURRENT_USER.id;
-                        const isToMe = settlement.to === CURRENT_USER.id;
+                        const isFromMe = settlement.from === myId;
+                        const isToMe = settlement.to === myId;
 
                         return (
                           <View key={idx} style={styles.settlementItem}>
                             <View style={styles.settlementRow}>
                               {/* From User */}
                               <View style={styles.settlementUser}>
-                                <View style={[styles.userAvatar, isFromMe && styles.userAvatarMe]}>
-                                  <Text style={styles.userAvatarText}>{fromUser?.nickname[0]}</Text>
-                                </View>
+                                <Avatar
+                                  nickname={fromUser?.nickname ?? ''}
+                                  profileImage={fromUser?.profileImage}
+                                  size={36}
+                                  fontSize={14}
+                                  backgroundColor={colors.surface}
+                                  style={[styles.userAvatarSpacing, isFromMe && styles.userAvatarMe]}
+                                />
                                 <Text style={styles.settlementUserName}>
                                   {fromUser?.nickname}
                                   {isFromMe && <Text style={styles.meTag}> (나)</Text>}
@@ -464,9 +535,14 @@ export default function SettlementScreen() {
 
                               {/* To User */}
                               <View style={styles.settlementUser}>
-                                <View style={[styles.userAvatar, styles.userAvatarReceiver, isToMe && styles.userAvatarMe]}>
-                                  <Text style={styles.userAvatarText}>{toUser?.nickname[0]}</Text>
-                                </View>
+                                <Avatar
+                                  nickname={toUser?.nickname ?? ''}
+                                  profileImage={toUser?.profileImage}
+                                  size={36}
+                                  fontSize={14}
+                                  backgroundColor={colors.brandMuted}
+                                  style={[styles.userAvatarSpacing, isToMe && styles.userAvatarMe]}
+                                />
                                 <Text style={styles.settlementUserName}>
                                   {toUser?.nickname}
                                   {isToMe && <Text style={styles.meTag}> (나)</Text>}
@@ -567,6 +643,28 @@ export default function SettlementScreen() {
             </View>
           </View>
         )}
+
+        {/* 마감: 백엔드가 모든 멤버 balance == 0 인지 검증한다. 마감 후에는 배지 표시. */}
+        <View style={styles.closeSection}>
+          {settledAt ? (
+            <View style={styles.closedBadge}>
+              <CheckIcon color={colors.positive} />
+              <Text style={styles.closedBadgeText}>
+                정산 마감됨 · {new Date(settledAt).toLocaleDateString('ko-KR')}
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[styles.closeButton, closing && styles.closeButtonDisabled]}
+              onPress={handleClose}
+              disabled={closing}
+            >
+              <Text style={styles.closeButtonText}>
+                {closing ? '마감 처리 중...' : '정산 마감하기'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={{ height: insets.bottom + spacing['3xl'] }} />
       </ScrollView>
@@ -803,19 +901,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
-  miniAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   payerName: {
     fontSize: 13,
     fontWeight: '600',
@@ -833,26 +918,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 70,
   },
-  userAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  userAvatarSpacing: {
     marginBottom: 4,
-  },
-  userAvatarReceiver: {
-    backgroundColor: colors.brandMuted,
   },
   userAvatarMe: {
     borderWidth: 2,
     borderColor: colors.brand,
-  },
-  userAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   settlementUserName: {
     fontSize: 12,
@@ -1010,5 +1081,39 @@ const styles = StyleSheet.create({
     color: colors.negative,
     textAlign: 'center',
     marginTop: 100,
+  },
+  closeSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  closeButton: {
+    paddingVertical: spacing.lg,
+    backgroundColor: colors.brand,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+  },
+  closeButtonDisabled: {
+    opacity: 0.5,
+  },
+  closeButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.foreground,
+  },
+  closedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.positive,
+  },
+  closedBadgeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.positive,
   },
 });

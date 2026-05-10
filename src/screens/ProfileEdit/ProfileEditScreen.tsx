@@ -21,7 +21,8 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
-import { ApiError } from '../../api/client';
+import { getAccessToken } from '../../auth/session';
+import { updateCurrentUser, uploadPickedImage, PickedImageAsset } from '../../api';
 
 // ============ Icons ============
 
@@ -61,11 +62,17 @@ const imageStyles = StyleSheet.create({
 export default function ProfileEditScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { user, updateProfile } = useAuth();
+  const { user, applyUser } = useAuth();
 
-  const [nickname, setNickname] = useState(user?.nickname ?? '');
-  const [bio, setBio] = useState(user?.bio ?? '');
-  const [imageUri, setImageUri] = useState<string | null>(user?.profileImage ?? null);
+  const initialNickname = user?.nickname ?? '';
+  const initialBio = user?.bio ?? '';
+  const initialImage = user?.profileImage ?? null;
+
+  const [nickname, setNickname] = useState(initialNickname);
+  const [bio, setBio] = useState(initialBio);
+  const [imageUri, setImageUri] = useState<string | null>(initialImage);
+  // picker 로 새로 고른 자산. 저장 시 S3 업로드 대상이며, 기존 https:// URL 만 있을 때는 null.
+  const [pickedAsset, setPickedAsset] = useState<PickedImageAsset | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handlePickImage = useCallback(() => {
@@ -74,9 +81,9 @@ export default function ProfileEditScreen() {
     requestAnimationFrame(() => {
       launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.1,
-        maxWidth: 100,
-        maxHeight: 100,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
         selectionLimit: 1,
         includeBase64: false,
       }).then(response => {
@@ -87,9 +94,15 @@ export default function ProfileEditScreen() {
           return;
         }
 
-        if (response.assets?.[0]?.uri) {
+        const picked = response.assets?.[0];
+        if (picked?.uri) {
           requestAnimationFrame(() => {
-            setImageUri(response.assets![0].uri);
+            setImageUri(picked.uri!);
+            setPickedAsset({
+              uri: picked.uri!,
+              type: picked.type ?? null,
+              fileName: picked.fileName ?? null,
+            });
           });
         }
       }).catch(() => {
@@ -98,27 +111,55 @@ export default function ProfileEditScreen() {
     });
   }, []);
 
+  // 프로필 저장: 새로 고른 이미지면 먼저 S3 업로드 → publicUrl 만 PATCH 로 전송. 게스트(토큰 없음)는 화면만 닫음.
   const handleSave = async () => {
     if (saving) return;
-    setSaving(true);
-    try {
-      await updateProfile({
-        nickname,
-        bio,
-        profileImage: imageUri ?? '',
-      });
+
+    if (!getAccessToken()) {
+      // 게스트 모드: 백엔드 호출 없이 화면만 닫는다.
       navigation.goBack();
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : '프로필 저장에 실패했습니다.';
-      Alert.alert('저장 실패', msg);
-    } finally {
-      setSaving(false);
+      return;
     }
+
+    setSaving(true);
+
+    let uploadedUrl: string | null = null;
+    if (pickedAsset) {
+      try {
+        uploadedUrl = await uploadPickedImage(pickedAsset, 'PROFILE');
+      } catch (e) {
+        setSaving(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
+
+    const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
+    if (nickname !== initialNickname) patch.nickname = nickname.trim();
+    if (bio !== initialBio) patch.bio = bio;
+    if (uploadedUrl) patch.profileImage = uploadedUrl;
+
+    const res = await updateCurrentUser(patch);
+    setSaving(false);
+    if (!res.data) {
+      Alert.alert('저장 실패', res.message ?? '프로필을 저장하지 못했습니다.');
+      return;
+    }
+    // 백엔드가 응답한 최신 프로필을 컨텍스트에 반영. id 가 number 인 MemberProfile 형식으로 채워서 호환.
+    applyUser({
+      id: Number(res.data.id),
+      nickname: res.data.nickname,
+      email: null,
+      profileImage: res.data.profileImage ?? null,
+      bio: res.data.bio ?? null,
+    });
+    navigation.goBack();
   };
 
-  const hasChanges = nickname !== (user?.nickname ?? '') ||
-    bio !== (user?.bio ?? '') ||
-    imageUri !== (user?.profileImage ?? null);
+  const hasChanges = nickname !== initialNickname ||
+    bio !== initialBio ||
+    imageUri !== initialImage;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -134,7 +175,7 @@ export default function ProfileEditScreen() {
           disabled={!hasChanges || saving}
         >
           <Text style={[styles.saveText, (!hasChanges || saving) && styles.saveTextDisabled]}>
-            {saving ? '저장중...' : '저장'}
+            {saving ? '저장 중...' : '저장'}
           </Text>
         </TouchableOpacity>
       </View>

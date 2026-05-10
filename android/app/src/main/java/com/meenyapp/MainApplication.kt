@@ -6,7 +6,6 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.kakao.sdk.common.KakaoSdk
 
 class MainApplication : Application(), ReactApplication {
 
@@ -23,7 +22,6 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    KakaoSdk.init(this, BuildConfig.KAKAO_NATIVE_APP_KEY)
     loadReactNative(this)
   }
 }

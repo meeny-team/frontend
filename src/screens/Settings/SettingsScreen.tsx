@@ -3,21 +3,24 @@
  * 모노 캘린더 스타일: 심플한 라인 구분 리스트
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Text,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg';
+import Svg, { Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
-import { CURRENT_USER } from '../../api';
+import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../auth/Auth';
+import { getAccessToken } from '../../auth/session';
+import { withdrawCurrentUser } from '../../api';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
@@ -45,7 +48,39 @@ function ChevronRightIcon({ size = 16, color = colors.muted }: { size?: number; 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const nickname = user?.nickname ?? '게스트';
+  const [withdrawing, setWithdrawing] = useState(false);
+
+  // 회원탈퇴: 백엔드에 탈퇴 요청 후 로컬 세션까지 정리. 게스트(토큰 없음)는 메뉴 숨김.
+  const handleWithdraw = () => {
+    Alert.alert(
+      '회원탈퇴',
+      '정말 탈퇴하시겠습니까? 모든 데이터가 영구적으로 삭제되며 되돌릴 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '탈퇴',
+          style: 'destructive',
+          onPress: async () => {
+            if (withdrawing) return;
+            setWithdrawing(true);
+            const res = await withdrawCurrentUser();
+            if (!res.data) {
+              setWithdrawing(false);
+              Alert.alert('탈퇴 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            // 백엔드 탈퇴는 성공 — 이어서 로컬 세션/소셜 토큰 정리.
+            await logout();
+            // 로그아웃이 user 를 null 로 비우면 AuthorizedStack 이 사라지므로 별도 navigate 불필요.
+          },
+        },
+      ],
+    );
+  };
+
+  const isLoggedIn = !!getAccessToken();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -69,11 +104,16 @@ export default function SettingsScreen() {
           onPress={() => navigation.navigate('ProfileEdit')}
           activeOpacity={0.6}
         >
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{CURRENT_USER.nickname[0]}</Text>
-          </View>
+          <Avatar
+            nickname={nickname}
+            profileImage={user?.profileImage}
+            size={52}
+            backgroundColor={colors.surface}
+            textColor={colors.secondary}
+            fontSize={20}
+          />
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{CURRENT_USER.nickname}</Text>
+            <Text style={styles.profileName}>{nickname}</Text>
             <Text style={styles.profileSub}>프로필 수정</Text>
           </View>
           <ChevronRightIcon />
@@ -89,12 +129,20 @@ export default function SettingsScreen() {
             <Text style={styles.menuValueText}>1.0.0</Text>
           </TouchableOpacity>
           <View style={styles.rowDivider} />
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.6}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => navigation.navigate('Legal', { type: 'terms' })}
+            activeOpacity={0.6}
+          >
             <Text style={styles.menuText}>이용약관</Text>
             <ChevronRightIcon />
           </TouchableOpacity>
           <View style={styles.rowDivider} />
-          <TouchableOpacity style={styles.menuRow} activeOpacity={0.6}>
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => navigation.navigate('Legal', { type: 'privacy' })}
+            activeOpacity={0.6}
+          >
             <Text style={styles.menuText}>개인정보 처리방침</Text>
             <ChevronRightIcon />
           </TouchableOpacity>
@@ -106,6 +154,21 @@ export default function SettingsScreen() {
           <TouchableOpacity style={styles.menuRow} onPress={logout} activeOpacity={0.6}>
             <Text style={styles.logoutText}>로그아웃</Text>
           </TouchableOpacity>
+          {isLoggedIn && (
+            <>
+              <View style={styles.rowDivider} />
+              <TouchableOpacity
+                style={styles.menuRow}
+                onPress={handleWithdraw}
+                disabled={withdrawing}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.withdrawText}>
+                  {withdrawing ? '탈퇴 처리 중...' : '회원탈퇴'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         <View style={{ height: insets.bottom + 40 }} />
@@ -151,19 +214,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,
-  },
-  profileAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileAvatarText: {
-    fontSize: 20,
-    fontWeight: '500',
-    color: colors.secondary,
   },
   profileInfo: {
     flex: 1,
@@ -226,5 +276,9 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 16,
     color: colors.negative,
+  },
+  withdrawText: {
+    fontSize: 14,
+    color: colors.tertiary,
   },
 });

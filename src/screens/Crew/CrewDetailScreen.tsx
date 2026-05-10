@@ -18,21 +18,24 @@ import {
   Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { launchImageLibrary } from 'react-native-image-picker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getCrewById,
-  getPlaysByCrewId,
-  getUserById,
-  getPlayTotalAmount,
+  fetchCrewById,
+  fetchPlaysByCrewId,
+  fetchPlayTotalAmount,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
+  updateCrew,
+  uploadPickedImage,
+  Crew,
   Play,
-  User,
+  MemberSummary,
 } from '../../api';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -131,12 +134,11 @@ const crewImageStyles = StyleSheet.create({
 
 interface PlayCardProps {
   play: Play;
+  totalAmount: number;
   onPress: () => void;
 }
 
-function PlayCard({ play, onPress }: PlayCardProps) {
-  const totalAmount = getPlayTotalAmount(play.id);
-
+function PlayCard({ play, totalAmount, onPress }: PlayCardProps) {
   return (
     <TouchableOpacity style={styles.playCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.playImageContainer}>
@@ -148,19 +150,13 @@ function PlayCard({ play, onPress }: PlayCardProps) {
           </View>
         )}
         <View style={styles.playTypeBadge}>
-          <Text style={styles.playTypeBadgeText}>
-            {play.type === 'etc' && play.tags && play.tags.length > 0
-              ? play.tags[0]
-              : PLAY_TYPE_LABELS[play.type]}
-          </Text>
+          <Text style={styles.playTypeBadgeText}>{PLAY_TYPE_LABELS[play.type]}</Text>
         </View>
       </View>
       <View style={styles.playInfo}>
         <Text style={styles.playTitle}>{play.title}</Text>
         <Text style={styles.playMeta}>
-          {play.regions && play.regions.length > 0
-            ? play.regions[0] + (play.regions.length > 1 ? ` 외 ${play.regions.length - 1}곳` : '')
-            : '미정'} · {formatDateRange(play.dateRange)}
+          {play.region || '미정'} · {formatDateRange(play.dateRange)}
         </Text>
         <Text style={styles.playAmount}>{formatCurrency(totalAmount)}</Text>
       </View>
@@ -174,31 +170,62 @@ export default function CrewDetailScreen() {
   const route = useRoute<RouteProps>();
   const { crewId } = route.params;
 
-  const crew = getCrewById(crewId);
-  const plays = getPlaysByCrewId(crewId);
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const [plays, setPlays] = useState<Play[]>([]);
+  const [playTotals, setPlayTotals] = useState<Record<string, number>>({});
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
   const [inviteEnabled, setInviteEnabled] = useState(true);
-  const [inviteCode, setInviteCode] = useState(crew?.inviteCode || '');
-  const [crewImageUri, setCrewImageUri] = useState<string | null>(crew?.coverImage || null);
+  const [inviteCode, setInviteCode] = useState('');
+  const [crewImageUri, setCrewImageUri] = useState<string | null>(null);
 
   // Profile modal state
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
 
-  // 크루 이미지 선택
+  // 화면 포커스마다 재fetch — 다른 화면(예: CreatePlay) 갔다 돌아왔을 때 갱신
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const crewRes = await fetchCrewById(crewId);
+        if (canceled) return;
+        const c = crewRes.data;
+        if (!c) return;
+        setCrew(c);
+        setInviteCode(c.inviteCode);
+        setCrewImageUri(c.coverImage ?? null);
+
+        const playsRes = await fetchPlaysByCrewId(crewId);
+        if (canceled) return;
+        const ps = playsRes.data;
+        setPlays(ps);
+
+        const totals = await Promise.all(
+          ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
+        );
+        if (canceled) return;
+        setPlayTotals(Object.fromEntries(totals));
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [crewId]),
+  );
+
+  // 크루 이미지 변경: picker → S3 업로드 → PATCH /api/crews/:id 까지 한 번에. 미리보기는 업로드 전 로컬 URI 로 즉시.
   const handlePickCrewImage = useCallback(() => {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
       launchImageLibrary({
         mediaType: 'photo',
-        quality: 0.1,
-        maxWidth: 100,
-        maxHeight: 100,
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
         selectionLimit: 1,
         includeBase64: false,
-      }).then(response => {
+      }).then(async response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
@@ -206,16 +233,34 @@ export default function CrewDetailScreen() {
           return;
         }
 
-        if (response.assets?.[0]?.uri) {
-          requestAnimationFrame(() => {
-            setCrewImageUri(response.assets![0].uri);
-          });
+        const picked = response.assets?.[0];
+        if (!picked?.uri) return;
+
+        // 즉시 로컬 미리보기
+        setCrewImageUri(picked.uri);
+
+        try {
+          const publicUrl = await uploadPickedImage(
+            { uri: picked.uri, type: picked.type ?? null, fileName: picked.fileName ?? null },
+            'CREW',
+          );
+          const result = await updateCrew(crewId, { coverImage: publicUrl });
+          if (result.status === 200 && result.data) {
+            // 백엔드가 presigned GET URL 로 변환해 응답하므로 그것을 사용
+            setCrewImageUri(result.data.coverImage ?? null);
+            setCrew(result.data);
+          } else {
+            Alert.alert('저장 실패', result.message ?? '크루 이미지를 저장하지 못했습니다.');
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+          Alert.alert('업로드 실패', msg);
         }
       }).catch(() => {
         Alert.alert('오류', '이미지를 선택할 수 없습니다.');
       });
     });
-  }, []);
+  }, [crewId]);
 
   // Generate random invite code
   const generateInviteCode = () => {
@@ -294,22 +339,22 @@ export default function CrewDetailScreen() {
           <Text style={styles.sectionLabel}>멤버 {crew.members.length}명</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.membersRow}>
-              {crew.members.map(memberId => {
-                const user = getUserById(memberId);
-                if (!user) return null;
-                return (
-                  <TouchableOpacity
-                    key={memberId}
-                    style={styles.memberItem}
-                    onPress={() => setSelectedUser(user)}
-                  >
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{user.nickname[0]}</Text>
-                    </View>
-                    <Text style={styles.memberName}>{user.nickname}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {crew.members.map(member => (
+                <TouchableOpacity
+                  key={member.id}
+                  style={styles.memberItem}
+                  onPress={() => setSelectedUser(member)}
+                >
+                  <Avatar
+                    nickname={member.nickname}
+                    profileImage={member.profileImage}
+                    size={48}
+                    fontSize={18}
+                    style={styles.memberAvatarSpacing}
+                  />
+                  <Text style={styles.memberName}>{member.nickname}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </ScrollView>
         </View>
@@ -332,6 +377,7 @@ export default function CrewDetailScreen() {
             <PlayCard
               key={play.id}
               play={play}
+              totalAmount={playTotals[play.id] ?? 0}
               onPress={() => navigation.navigate('PlayDetail', { playId: play.id })}
             />
           ))}
@@ -368,19 +414,18 @@ export default function CrewDetailScreen() {
           {selectedUser && (
             <View style={styles.profileContent}>
               {/* Avatar */}
-              <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
-              </View>
+              <Avatar
+                nickname={selectedUser.nickname}
+                profileImage={selectedUser.profileImage}
+                size={80}
+                fontSize={32}
+                style={styles.profileAvatarLargeSpacing}
+              />
 
               {/* Name */}
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
 
-              {/* Bio */}
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* Bio: 백엔드의 MemberSummary 에는 bio 가 없음 — 본인 화면(Settings/ProfileEdit) 외엔 노출 X */}
             </View>
           )}
         </View>
@@ -549,19 +594,8 @@ const styles = StyleSheet.create({
   memberItem: {
     alignItems: 'center',
   },
-  memberAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  memberAvatarSpacing: {
     marginBottom: spacing.xs,
-  },
-  memberAvatarText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   memberName: {
     fontSize: 12,
@@ -822,19 +856,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing['3xl'],
     paddingHorizontal: spacing.xl,
   },
-  profileAvatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileAvatarLargeSpacing: {
     marginBottom: spacing.md,
-  },
-  profileAvatarLargeText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   profileName: {
     fontSize: 20,

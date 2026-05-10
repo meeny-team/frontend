@@ -1,90 +1,192 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Alert } from 'react-native';
+/**
+ * Meeny - Auth Context
+ *
+ *  - 부팅: session 에서 토큰 복원 → fetchMe 로 사용자 정보 채움. 만료/무효 토큰이면
+ *    request() 가 자동 refresh 를 시도하고, 그것마저 실패하면 onSessionExpired 가
+ *    호출되어 user state 가 비워짐.
+ *  - 로그인 성공: session 에 토큰 저장 → fetchMe 로 사용자 정보 채움
+ *  - 로그아웃: 백엔드에 refresh 토큰 무효화 호출 + 카카오/구글 세션 종료 + session clear
+ *
+ * 토큰 자체는 session 모듈이 single source of truth. 이 컴포넌트는 user/loading 만 보유.
+ */
+
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { login as kakaoLogin, logout as kakaoLogout } from '@react-native-seoul/kakao-login';
-import { User } from '../api';
-import { socialLogin, logoutBackend, refreshAccessToken } from '../api/auth';
-import { fetchMe, updateMe, withdrawMe } from '../api/user';
-import { UpdateUserRequest } from '../api/schema';
-import { getToken, clearTokens, configureAuthBridge } from '../api/client';
+import appleAuth from '@invertase/react-native-apple-authentication';
+import { CURRENT_USER, User } from '../api';
+import {
+  socialLogin,
+  fetchMe,
+  logout as apiLogout,
+  AuthApiError,
+  MemberProfile,
+  TokenResponse,
+} from '../api/auth';
+import {
+  loadFromStorage,
+  saveTokens,
+  clearSession,
+  getRefreshToken,
+  setOnSessionExpired,
+} from './session';
 
 interface AuthContextType {
-  user: User | null;
+  user: MemberProfile | User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  loginWithGoogle: () => Promise<void>;
   loginWithKakao: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
+  loginAsGuest: () => void;
   logout: () => Promise<void>;
-  updateProfile: (request: UpdateUserRequest) => Promise<User>;
-  withdraw: () => Promise<void>;
+  // 프로필 수정 후 백엔드에서 받은 최신 프로필을 그대로 반영. 게스트(토큰 없음)는 호출 의미가 없어 사용처에서 분기.
+  applyUser: (next: MemberProfile | User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<MemberProfile | User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // 시작 시 한 번: 저장된 토큰 복원 + 자동 로그인 + 세션 만료 알림 콜백 등록
   useEffect(() => {
-    configureAuthBridge({
-      refresh: async () => {
-        const tokens = await refreshAccessToken();
-        return tokens?.accessToken ?? null;
-      },
-      onFailure: () => setUser(null),
-    });
-    restoreSession();
+    setOnSessionExpired(() => setUser(null));
+
+    (async () => {
+      const stored = await loadFromStorage();
+      if (stored) {
+        try {
+          const me = await fetchMe();
+          setUser(me);
+        } catch {
+          // 토큰이 만료되었고 자동 refresh 까지 실패한 경우. session 은 이미 비워져 있음.
+        }
+      }
+      setIsLoading(false);
+    })();
+
+    return () => setOnSessionExpired(null);
   }, []);
 
-  async function restoreSession() {
+  // 로그인 직후 공통 후처리: 토큰 영속화 → 사용자 프로필 호출
+  // (saveTokens 가 먼저여야 fetchMe 가 자동으로 새 토큰을 첨부할 수 있다)
+  const completeLogin = async (issued: TokenResponse) => {
+    await saveTokens(issued);
+    const me = await fetchMe();
+    setUser(me);
+  };
+
+  const loginWithGoogle = async () => {
     try {
-      const token = await getToken();
-      if (token) {
-        const me = await fetchMe();
-        setUser(me);
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const result = await GoogleSignin.signIn();
+      const idToken =
+        // @ts-expect-error 16.x({type,data}) 와 그 미만 버전 모두 지원하기 위해 두 형태 허용
+        result?.data?.idToken ?? result?.idToken;
+      if (!idToken) {
+        throw new Error('Google ID token 을 받지 못했습니다.');
       }
+      const issued = await socialLogin('GOOGLE', idToken);
+      await completeLogin(issued);
+    } catch (err) {
+      if (
+        (err as { code?: string })?.code === statusCodes.SIGN_IN_CANCELLED ||
+        (err as { code?: string })?.code === statusCodes.IN_PROGRESS
+      ) {
+        return;
+      }
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] google sign-in failed:', err);
+      }
+      throw err;
+    }
+  };
+
+  const loginWithKakao = async () => {
+    try {
+      const kakao = await kakaoLogin();
+      const issued = await socialLogin('KAKAO', kakao.accessToken);
+      await completeLogin(issued);
+    } catch (err) {
+      const msg = (err as { message?: string })?.message ?? '';
+      if (msg.includes('user cancelled') || msg.includes('canceled')) {
+        return;
+      }
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] kakao sign-in failed:', err);
+      }
+      throw err;
+    }
+  };
+
+  const loginWithApple = async () => {
+    if (Platform.OS !== 'ios') {
+      throw new Error('Apple 로그인은 iOS 에서만 지원됩니다.');
+    }
+    try {
+      const response = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.EMAIL, appleAuth.Scope.FULL_NAME],
+      });
+      const { identityToken, fullName } = response;
+      if (!identityToken) {
+        throw new Error('Apple identity token 을 받지 못했습니다.');
+      }
+      // fullName 은 최초 동의 시에만 채워짐 — 백엔드는 nickname 없으면 자동 생성
+      const nickname = fullName?.givenName
+        ? `${fullName.familyName ?? ''}${fullName.givenName}`.trim()
+        : undefined;
+      const issued = await socialLogin('APPLE', identityToken, nickname);
+      await completeLogin(issued);
+    } catch (err) {
+      if ((err as { code?: string })?.code === appleAuth.Error.CANCELED) {
+        return;
+      }
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] apple sign-in failed:', err);
+      }
+      throw err;
+    }
+  };
+
+  const loginAsGuest = () => {
+    // "둘러보기": 백엔드 호출 없이 mock 사용자로 진입
+    setUser(CURRENT_USER);
+  };
+
+  const logout = async () => {
+    const rt = getRefreshToken();
+    try {
+      if (rt) await apiLogout(rt);
+    } catch (err) {
+      console.warn('[auth] logout call failed:', err);
+    }
+    // Google 은 Android 에서만 configure 됨. iOS 에서 signOut 부르면 네이티브 모듈이
+    // 미초기화 상태라 JS try/catch 로 못 잡는 크래시가 발생.
+    if (Platform.OS === 'android') {
+      try {
+        await GoogleSignin.signOut();
+      } catch {
+        /* 세션이 없을 수도 있음 */
+      }
+    }
+    try {
+      await kakaoLogout();
     } catch {
-      await clearTokens();
-    } finally {
-      setIsLoading(false);
+      /* 세션이 없을 수도 있음 */
     }
-  }
-
-  async function loginWithKakao() {
-    try {
-      const { accessToken } = await kakaoLogin();
-      await socialLogin({ provider: 'KAKAO', token: accessToken });
-      const me = await fetchMe();
-      setUser(me);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('cancelled') || msg.includes('cancel')) return;
-      console.error('[loginWithKakao] error:', e);
-      Alert.alert('로그인 실패', msg);
-    }
-  }
-
-  async function updateProfile(request: UpdateUserRequest): Promise<User> {
-    const updated = await updateMe(request);
-    setUser(updated);
-    return updated;
-  }
-
-  async function logout() {
-    await logoutBackend();
-    try {
-      await kakaoLogout();
-    } catch {}
-    await clearTokens();
+    await clearSession();
     setUser(null);
-  }
-
-  async function withdraw() {
-    await withdrawMe();
-    try {
-      await kakaoLogout();
-    } catch {}
-    await clearTokens();
-    setUser(null);
-  }
+  };
 
   return (
     <AuthContext.Provider
@@ -92,10 +194,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
+        loginWithGoogle,
         loginWithKakao,
+        loginWithApple,
+        loginAsGuest,
         logout,
-        updateProfile,
-        withdraw,
+        applyUser: setUser,
       }}
     >
       {children}

@@ -3,7 +3,7 @@
  * 플레이 설정 (제목, 태그, 멤버 수정)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,17 +17,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Path, Line, Polyline } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getPlayById,
-  getCrewById,
-  getUserById,
   PLAY_TYPE_LABELS,
-  DOMESTIC_REGIONS,
-  OVERSEAS_REGIONS,
-  RegionGroup,
+  REGIONS,
   PlayType,
-  CURRENT_USER,
+  Play,
+  Crew,
+  fetchPlayById,
+  fetchCrewById,
+  updatePlay,
+  deletePlay,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PlaySettings'>;
@@ -82,34 +84,44 @@ export default function PlaySettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const crewMembers = useMemo(() => {
-    if (!crew) return [];
-    return crew.members.map(id => getUserById(id)).filter(u => u !== undefined);
-  }, [crew]);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [crew, setCrew] = useState<Crew | null>(null);
+  const crewMembers = useMemo(() => crew?.members ?? [], [crew]);
 
-  const [title, setTitle] = useState(play?.title || '');
-  const [type, setType] = useState<PlayType>(play?.type || 'travel');
-  const [selectedRegions, setSelectedRegions] = useState<string[]>(play?.regions || []);
-  const [tags, setTags] = useState<string[]>(play?.tags || []);
+  const [title, setTitle] = useState('');
+  const [type, setType] = useState<PlayType>('travel');
+  const [region, setRegion] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(play?.members || []);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const toggleRegion = (groupLabel: string, region: string) => {
-    // "전체" 선택 시 그룹 라벨만 저장 (예: "서울 성북구")
-    const fullRegion = region === '전체' ? groupLabel : `${groupLabel} ${region}`;
-    setSelectedRegions(prev =>
-      prev.includes(fullRegion)
-        ? prev.filter(r => r !== fullRegion)
-        : [...prev, fullRegion]
-    );
-  };
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      const playRes = await fetchPlayById(playId);
+      if (canceled || !playRes.data) return;
+      const p = playRes.data;
+      setPlay(p);
+      setTitle(p.title);
+      setType(p.type);
+      setRegion(p.region ?? '');
+      setTags(p.tags ?? []);
+      setSelectedMemberIds(p.members.map(m => m.id));
 
-  const removeRegion = (region: string) => {
-    setSelectedRegions(prev => prev.filter(r => r !== region));
-  };
+      const crewRes = await fetchCrewById(p.crewId);
+      if (canceled || !crewRes.data) return;
+      setCrew(crewRes.data);
+    })();
+    return () => {
+      canceled = true;
+    };
+  }, [playId]);
 
   if (!play || !crew) {
     return (
@@ -120,10 +132,10 @@ export default function PlaySettingsScreen() {
   }
 
   const toggleMember = (memberId: string) => {
-    if (memberId === CURRENT_USER.id) return;
-    setSelectedMembers(prev =>
+    if (memberId === myId) return;
+    setSelectedMemberIds((prev: string[]) =>
       prev.includes(memberId)
-        ? prev.filter(id => id !== memberId)
+        ? prev.filter((id: string) => id !== memberId)
         : [...prev, memberId]
     );
   };
@@ -139,8 +151,45 @@ export default function PlaySettingsScreen() {
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
-  const handleSave = () => {
-    // TODO: Actually save the changes
+  // 변경된 필드만 PATCH /api/plays/{playId} 로 전송. 백엔드는 부분 업데이트를 허용.
+  const handleSave = async () => {
+    if (!play || saving) return;
+    const patch: Partial<{
+      title: string;
+      type: PlayType;
+      region: string;
+      tags: string[];
+      memberIds: string[];
+    }> = {};
+    if (title.trim() !== play.title) patch.title = title.trim();
+    if (type !== play.type) patch.type = type;
+    const prevRegion = play.region ?? '';
+    if (region !== prevRegion) patch.region = region;
+    const prevTags = play.tags ?? [];
+    if (
+      tags.length !== prevTags.length ||
+      tags.some((t, i) => t !== prevTags[i])
+    ) patch.tags = tags;
+    const prevMemberIds = play.members.map(m => m.id);
+    const sortedNew = [...selectedMemberIds].sort();
+    const sortedOld = [...prevMemberIds].sort();
+    if (
+      sortedNew.length !== sortedOld.length ||
+      sortedNew.some((id, i) => id !== sortedOld[i])
+    ) patch.memberIds = selectedMemberIds;
+
+    if (Object.keys(patch).length === 0) {
+      navigation.goBack();
+      return;
+    }
+
+    setSaving(true);
+    const res = await updatePlay(playId, patch);
+    setSaving(false);
+    if (!res.data) {
+      Alert.alert('저장 실패', res.message ?? '플레이를 저장하지 못했습니다.');
+      return;
+    }
     navigation.goBack();
   };
 
@@ -153,8 +202,17 @@ export default function PlaySettingsScreen() {
         {
           text: '삭제',
           style: 'destructive',
-          onPress: () => {
-            // TODO: Actually delete
+          onPress: async () => {
+            if (deleting) return;
+            setDeleting(true);
+            const res = await deletePlay(playId);
+            setDeleting(false);
+            if (!res.data) {
+              Alert.alert('삭제 실패', res.message ?? '플레이를 삭제하지 못했습니다.');
+              return;
+            }
+            // 상세 화면이 사라진 플레이를 다시 조회하지 않도록 두 단계 뒤로.
+            navigation.goBack();
             navigation.goBack();
           },
         },
@@ -162,7 +220,7 @@ export default function PlaySettingsScreen() {
     );
   };
 
-  const isValid = title.trim().length > 0 && selectedMembers.length > 0;
+  const isValid = title.trim().length > 0 && selectedMemberIds.length > 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -173,11 +231,11 @@ export default function PlaySettingsScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>플레이 설정</Text>
         <TouchableOpacity
-          style={[styles.saveButton, !isValid && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!isValid || saving) && styles.saveButtonDisabled]}
           onPress={handleSave}
-          disabled={!isValid}
+          disabled={!isValid || saving}
         >
-          <Text style={styles.saveButtonText}>저장</Text>
+          <Text style={styles.saveButtonText}>{saving ? '저장 중...' : '저장'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -216,40 +274,19 @@ export default function PlaySettingsScreen() {
         {/* Region */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>지역</Text>
-          {selectedRegions.length > 0 && (
-            <View style={styles.selectedRegionsContainer}>
-              {selectedRegions.map(region => (
-                <TouchableOpacity
-                  key={region}
-                  style={styles.selectedRegionChip}
-                  onPress={() => removeRegion(region)}
-                >
-                  <Text style={styles.selectedRegionText}>{region}</Text>
-                  <Text style={styles.selectedRegionRemove}>×</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          {/* 주요 지역 빠른 선택 */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.regionRow}>
-              {DOMESTIC_REGIONS.slice(0, 5).flatMap((group: RegionGroup) =>
-                group.regions.filter(r => r !== '전체').slice(0, 3).map(r => {
-                  const fullRegion = `${group.label} ${r}`;
-                  const isSelected = selectedRegions.includes(fullRegion);
-                  return (
-                    <TouchableOpacity
-                      key={fullRegion}
-                      style={[styles.regionChip, isSelected && styles.regionChipActive]}
-                      onPress={() => toggleRegion(group.label, r)}
-                    >
-                      <Text style={[styles.regionText, isSelected && styles.regionTextActive]}>
-                        {r}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
+              {REGIONS.filter(r => r !== '전체').map(r => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.regionChip, region === r && styles.regionChipActive]}
+                  onPress={() => setRegion(region === r ? '' : r)}
+                >
+                  <Text style={[styles.regionText, region === r && styles.regionTextActive]}>
+                    {r}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </ScrollView>
         </View>
@@ -287,13 +324,13 @@ export default function PlaySettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>참여 멤버</Text>
-            <Text style={styles.memberCount}>{selectedMembers.length}명</Text>
+            <Text style={styles.memberCount}>{selectedMemberIds.length}명</Text>
           </View>
           <View style={styles.memberList}>
             {crewMembers.map(member => {
               if (!member) return null;
-              const isSelected = selectedMembers.includes(member.id);
-              const isCurrentUser = member.id === CURRENT_USER.id;
+              const isSelected = selectedMemberIds.includes(member.id);
+              const isCurrentUser = member.id === myId;
               return (
                 <TouchableOpacity
                   key={member.id}
@@ -304,11 +341,14 @@ export default function PlaySettingsScreen() {
                   onPress={() => toggleMember(member.id)}
                   disabled={isCurrentUser}
                 >
-                  <View style={[styles.memberAvatar, isSelected && styles.memberAvatarSelected]}>
-                    <Text style={[styles.memberAvatarText, isSelected && styles.memberAvatarTextSelected]}>
-                      {member.nickname[0]}
-                    </Text>
-                  </View>
+                  <Avatar
+                    nickname={member.nickname}
+                    profileImage={member.profileImage}
+                    size={36}
+                    fontSize={14}
+                    backgroundColor={isSelected ? colors.brand : colors.elevated}
+                    textColor={isSelected ? colors.foreground : colors.secondary}
+                  />
                   <View style={styles.memberInfo}>
                     <Text style={[styles.memberName, isSelected && styles.memberNameSelected]}>
                       {member.nickname}
@@ -328,9 +368,15 @@ export default function PlaySettingsScreen() {
 
         {/* Delete */}
         <View style={styles.dangerSection}>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+          <TouchableOpacity
+            style={[styles.deleteButton, deleting && styles.saveButtonDisabled]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
             <TrashIcon />
-            <Text style={styles.deleteButtonText}>플레이 삭제</Text>
+            <Text style={styles.deleteButtonText}>
+              {deleting ? '삭제 중...' : '플레이 삭제'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -427,31 +473,6 @@ const styles = StyleSheet.create({
   },
   typeTextActive: {
     color: colors.foreground,
-  },
-  selectedRegionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  selectedRegionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.brandMuted,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.full,
-    gap: spacing.xs,
-  },
-  selectedRegionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: colors.brand,
-  },
-  selectedRegionRemove: {
-    fontSize: 14,
-    color: colors.brand,
-    fontWeight: '600',
   },
   regionRow: {
     flexDirection: 'row',
@@ -569,25 +590,6 @@ const styles = StyleSheet.create({
   memberItemSelected: {
     borderColor: colors.brand,
     backgroundColor: colors.brandMuted,
-  },
-  memberAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarSelected: {
-    backgroundColor: colors.brand,
-  },
-  memberAvatarText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.secondary,
-  },
-  memberAvatarTextSelected: {
-    color: colors.foreground,
   },
   memberInfo: {
     flex: 1,

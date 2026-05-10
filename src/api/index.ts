@@ -13,12 +13,12 @@ export * from './utils';
 export { apiCall, apiError } from './client';
 
 // APIs
-export * from './auth';
 export * from './user';
 export * from './crew';
 export * from './play';
 export * from './pin';
-export * from './region';
+export * from './settlement';
+export * from './uploads';
 
 // Mock Data (for direct access)
 export { CURRENT_USER, users, crews, plays, pins } from './mock';

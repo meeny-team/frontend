@@ -3,7 +3,7 @@
  * 플레이 상세 (핀 타임라인)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -15,27 +15,25 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import Svg, { Path, Circle, Polyline, Line, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
+import { Avatar } from '../../components/Avatar';
 import {
-  getPlayById,
-  getCrewById,
-  getPinsByPlayId,
-  getUserById,
-  getPlayTotalAmount,
-  getPlayAverageAmount,
-  getPlayMembers,
+  fetchPlayById,
+  fetchPinsByPlayId,
+  fetchPlayTotalAmount,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
-  CURRENT_USER,
   Pin,
-  User,
+  Play,
+  MemberSummary,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
@@ -90,16 +88,15 @@ function XIcon() {
 
 interface PinCardProps {
   pin: Pin;
+  author?: MemberSummary;
   onPress: () => void;
   onPressAuthor?: () => void;
 }
 
-function PinCard({ pin, onPress, onPressAuthor }: PinCardProps) {
-  const author = getUserById(pin.authorId);
+function PinCard({ pin, author, onPress, onPressAuthor }: PinCardProps) {
   const categoryColor = CATEGORY_COLORS[pin.category];
 
   const displayName = author?.nickname;
-  const displayInitial = author?.nickname?.[0];
 
   return (
     <TouchableOpacity style={styles.pinCard} onPress={onPress} activeOpacity={0.7}>
@@ -114,9 +111,12 @@ function PinCard({ pin, onPress, onPressAuthor }: PinCardProps) {
         {/* Author */}
         <View style={styles.pinAuthor}>
           <TouchableOpacity onPress={onPressAuthor} disabled={!onPressAuthor} activeOpacity={0.7}>
-            <View style={styles.authorAvatar}>
-              <Text style={styles.authorAvatarText}>{displayInitial}</Text>
-            </View>
+            <Avatar
+              nickname={author?.nickname ?? ''}
+              profileImage={author?.profileImage}
+              size={28}
+              fontSize={12}
+            />
           </TouchableOpacity>
           <TouchableOpacity onPress={onPressAuthor} disabled={!onPressAuthor} activeOpacity={0.7}>
             <Text style={styles.authorName}>{displayName}</Text>
@@ -152,18 +152,41 @@ export default function PlayDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
   const { playId } = route.params;
+  const { user } = useAuth();
+  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  const myId = user ? String(user.id) : null;
 
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
+  const [play, setPlay] = useState<Play | null>(null);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [totalAmount, setTotalAmount] = useState(0);
 
-  const play = getPlayById(playId);
-  const crew = play ? getCrewById(play.crewId) : undefined;
-  const pins = getPinsByPlayId(playId);
-  const totalAmount = getPlayTotalAmount(playId);
-  const avgAmount = getPlayAverageAmount(playId);
-  const playMembers = getPlayMembers(playId);
+  useFocusEffect(
+    useCallback(() => {
+      let canceled = false;
+      (async () => {
+        const playRes = await fetchPlayById(playId);
+        if (canceled || !playRes.data) return;
+        setPlay(playRes.data);
 
-  // Check if current user is a member of this crew
-  const isMember = crew?.members.includes(CURRENT_USER.id) ?? false;
+        const [pinsRes, totalRes] = await Promise.all([
+          fetchPinsByPlayId(playId),
+          fetchPlayTotalAmount(playId),
+        ]);
+        if (canceled) return;
+        setPins(pinsRes.data);
+        setTotalAmount(totalRes.data);
+      })();
+      return () => {
+        canceled = true;
+      };
+    }, [playId]),
+  );
+
+  const playMembers = play?.members ?? [];
+  const avgAmount = playMembers.length > 0 ? Math.floor(totalAmount / playMembers.length) : 0;
+  // 본인이 이 플레이의 멤버인가? (백엔드는 GET /api/plays/{id} 자체가 멤버에게만 노출이라 사실상 항상 true)
+  const isMember = !!myId && playMembers.some(m => m.id === myId);
 
   if (!play) {
     return (
@@ -172,6 +195,9 @@ export default function PlayDetailScreen() {
       </View>
     );
   }
+
+  // 핀 작성자 닉네임 조회: play.members 에서 직접 찾는다 (별도 호출 불필요)
+  const memberMap = new Map(playMembers.map(m => [m.id, m]));
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -209,17 +235,9 @@ export default function PlayDetailScreen() {
         {/* Info */}
         <View style={styles.infoSection}>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>
-              {play.type === 'etc' && play.tags && play.tags.length > 0
-                ? play.tags[0]
-                : PLAY_TYPE_LABELS[play.type]}
-            </Text>
+            <Text style={styles.infoLabel}>{PLAY_TYPE_LABELS[play.type]}</Text>
             <Text style={styles.infoDot}>·</Text>
-            <Text style={styles.infoLabel}>
-              {play.regions && play.regions.length > 0
-                ? play.regions.join(', ')
-                : '미정'}
-            </Text>
+            <Text style={styles.infoLabel}>{play.region || '미정'}</Text>
             <Text style={styles.infoDot}>·</Text>
             <Text style={styles.infoLabel}>
               {formatDateRange(play.dateRange)}
@@ -246,9 +264,12 @@ export default function PlayDetailScreen() {
               <View style={styles.membersRow}>
                 {playMembers.map(member => (
                   <View key={member.id} style={styles.memberChip}>
-                    <View style={styles.memberAvatar}>
-                      <Text style={styles.memberAvatarText}>{member.nickname[0]}</Text>
-                    </View>
+                    <Avatar
+                      nickname={member.nickname}
+                      profileImage={member.profileImage}
+                      size={24}
+                      fontSize={11}
+                    />
                     <Text style={styles.memberName}>{member.nickname}</Text>
                   </View>
                 ))}
@@ -292,11 +313,12 @@ export default function PlayDetailScreen() {
             )}
           </View>
           {pins.map(pin => {
-            const author = getUserById(pin.authorId);
+            const author = memberMap.get(pin.authorId);
             return (
               <PinCard
                 key={pin.id}
                 pin={pin}
+                author={author}
                 onPress={() => navigation.navigate('PinDetail', { pinId: pin.id })}
                 onPressAuthor={author ? () => setSelectedUser(author) : undefined}
               />
@@ -331,15 +353,15 @@ export default function PlayDetailScreen() {
 
           {selectedUser && (
             <View style={styles.profileContent}>
-              <View style={styles.profileAvatarLarge}>
-                <Text style={styles.profileAvatarLargeText}>{selectedUser.nickname[0]}</Text>
-              </View>
+              <Avatar
+                nickname={selectedUser.nickname}
+                profileImage={selectedUser.profileImage}
+                size={80}
+                fontSize={32}
+                style={styles.profileAvatarLargeSpacing}
+              />
               <Text style={styles.profileName}>{selectedUser.nickname}</Text>
-              <View style={styles.profileBioCard}>
-                <Text style={styles.profileBio}>
-                  {selectedUser.bio || '아직 자기소개가 없습니다.'}
-                </Text>
-              </View>
+              {/* MemberSummary 에 bio 없음 — 본인 화면 외엔 표시 X */}
             </View>
           )}
         </View>
@@ -487,19 +509,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.xs,
   },
-  memberAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memberAvatarText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.foreground,
-  },
   memberName: {
     fontSize: 13,
     fontWeight: '500',
@@ -590,19 +599,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     gap: spacing.sm,
-  },
-  authorAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  authorAvatarText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   authorName: {
     fontSize: 13,
@@ -698,19 +694,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing['3xl'],
     paddingHorizontal: spacing.xl,
   },
-  profileAvatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+  profileAvatarLargeSpacing: {
     marginBottom: spacing.md,
-  },
-  profileAvatarLargeText: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: colors.foreground,
   },
   profileName: {
     fontSize: 20,
