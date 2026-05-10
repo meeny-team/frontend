@@ -7,8 +7,8 @@
 
 import { Platform } from 'react-native';
 
-// release 빌드(__DEV__ === false) 시 사용. 운영 도메인이 확정되면 교체.
-const PROD_API_BASE_URL = 'https://api.meeny.app';
+// release 빌드(__DEV__ === false) 시 사용.
+const PROD_API_BASE_URL = 'https://api.meeny.store';
 
 // Android emulator는 호스트의 localhost를 10.0.2.2로 봐야 한다.
 // iOS 시뮬레이터는 그대로 localhost.
