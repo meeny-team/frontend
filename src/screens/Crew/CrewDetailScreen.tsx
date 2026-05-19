@@ -33,6 +33,7 @@ import {
   PLAY_TYPE_LABELS,
   updateCrew,
   uploadPickedImage,
+  leaveCrew,
   Crew,
   Play,
   MemberSummary,
@@ -310,6 +311,30 @@ export default function CrewDetailScreen() {
     Alert.alert('복사됨', '초대 코드가 클립보드에 복사되었습니다.');
   };
 
+  // 크루 나가기: 백엔드가 미정산 잔액 있으면 409 로 막음
+  const handleLeaveCrew = useCallback(() => {
+    Alert.alert(
+      '크루 나가기',
+      '정말 이 크루를 나가시겠습니까?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '나가기',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await leaveCrew(crewId);
+            if (res.status === 204) {
+              setShowSettings(false);
+              navigation.goBack();
+              return;
+            }
+            Alert.alert('나가기 실패', res.message ?? '크루를 나갈 수 없습니다.');
+          },
+        },
+      ],
+    );
+  }, [crewId, navigation]);
+
   if (!crew) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -518,19 +543,7 @@ export default function CrewDetailScreen() {
             {/* Danger Zone */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>위험 구역</Text>
-              <TouchableOpacity
-                style={styles.dangerButton}
-                onPress={() => {
-                  Alert.alert(
-                    '크루 나가기',
-                    '정말 이 크루를 나가시겠습니까?',
-                    [
-                      { text: '취소', style: 'cancel' },
-                      { text: '나가기', style: 'destructive' },
-                    ]
-                  );
-                }}
-              >
+              <TouchableOpacity style={styles.dangerButton} onPress={handleLeaveCrew}>
                 <Text style={styles.dangerButtonText}>크루 나가기</Text>
               </TouchableOpacity>
             </View>
