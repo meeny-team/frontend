@@ -23,12 +23,17 @@ import {
   fetchPlayTotalAmount,
   fetchPlaySettlement,
   closePlaySettlement,
+  markPinTransferSent,
+  markPinTransferReceived,
+  cancelPinTransferSent,
   formatCurrency,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
   Pin,
   Play,
   MemberSummary,
+  PlaySettlement,
+  PinTransfer,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -117,9 +122,10 @@ export default function SettlementScreen() {
   const [play, setPlay] = useState<Play | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
-  // 백엔드의 settledAt(=정산 마감 시각). null 이면 마감 전. 마감 버튼/배지 분기 기준.
-  const [settledAt, setSettledAt] = useState<string | null>(null);
+  // 백엔드 정산 응답 전체. pinTransfers 의 sentAt/receivedAt 으로 각 송금 상태 도출. null = 미로드.
+  const [settlement, setSettlement] = useState<PlaySettlement | null>(null);
   const [closing, setClosing] = useState(false);
+  const settledAt = settlement?.settledAt ?? null;
 
   useFocusEffect(
     useCallback(() => {
@@ -137,7 +143,7 @@ export default function SettlementScreen() {
         if (canceled) return;
         setPins(pinsRes.data);
         setTotalAmount(totalRes.data);
-        setSettledAt(settlementRes.data?.settledAt ?? null);
+        setSettlement(settlementRes.data ?? null);
       })();
       return () => {
         canceled = true;
@@ -145,7 +151,7 @@ export default function SettlementScreen() {
     }, [playId]),
   );
 
-  // 정산 마감: 백엔드가 모든 멤버 balance == 0 인지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
+  // 정산 마감: 백엔드가 모든 송금이 received 마킹됐는지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
   const handleClose = () => {
     Alert.alert(
       '정산 마감',
@@ -164,7 +170,7 @@ export default function SettlementScreen() {
               Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
               return;
             }
-            setSettledAt(res.data.settledAt);
+            setSettlement(res.data);
             Alert.alert('정산 마감 완료', '정산이 마감되었습니다.');
           },
         },
@@ -184,20 +190,23 @@ export default function SettlementScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [expandedPins, setExpandedPins] = useState<Set<string>>(new Set());
 
-  // 정산 상태 관리 (실제로는 서버에서 가져와야 함)
-  // 예시: 흑돼지 술값(pin1b)에서 서연(u2)이 나(u1)에게 이미 "보냈음" 표시
-  const [settlementStates, setSettlementStates] = useState<Record<string, SettlementItemState>>({
-    'pin1b:u2:u1': { status: 'sent', sentAt: '2024-03-16T10:00:00Z' },  // 서연 → 나: 확인 대기중
-  });
+  // 백엔드 응답의 pinTransfers 를 (pinId, from, to) → PinTransfer 맵으로 인덱싱
+  const pinTransferMap = useMemo(() => {
+    const map = new Map<string, PinTransfer>();
+    for (const t of settlement?.pinTransfers ?? []) {
+      map.set(`${t.pinId}:${t.fromMemberId}:${t.toMemberId}`, t);
+    }
+    return map;
+  }, [settlement]);
 
-  // 정산 키 생성
-  const getSettlementKey = (pinId: string, fromUserId: string, toUserId: string) =>
-    `${pinId}:${fromUserId}:${toUserId}`;
-
-  // 정산 상태 가져오기
+  // 정산 상태 도출: row 없으면 pending, sentAt 있고 receivedAt 없으면 sent, receivedAt 있으면 completed
   const getSettlementState = (pinId: string, fromUserId: string, toUserId: string): SettlementItemState => {
-    const key = getSettlementKey(pinId, fromUserId, toUserId);
-    return settlementStates[key] || { status: 'pending' };
+    const mark = pinTransferMap.get(`${pinId}:${fromUserId}:${toUserId}`);
+    if (!mark || !mark.sentAt) return { status: 'pending' };
+    if (mark.receivedAt) {
+      return { status: 'completed', sentAt: mark.sentAt, completedAt: mark.receivedAt };
+    }
+    return { status: 'sent', sentAt: mark.sentAt };
   };
 
   // 각 핀의 정산 항목 계산
@@ -252,18 +261,19 @@ export default function SettlementScreen() {
     const totalCount = pendingCount + sentCount + completedCount;
     return { pendingCount, sentCount, completedCount, totalCount, pendingAmount, completedAmount };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
-  }, [pinSettlements, settlementStates]);
+  }, [pinSettlements, pinTransferMap]);
 
-  // 보내기 (발신자)
-  const handleSend = (pinId: string, fromUserId: string, toUserId: string) => {
-    const key = getSettlementKey(pinId, fromUserId, toUserId);
-    setSettlementStates(prev => ({
-      ...prev,
-      [key]: { status: 'sent', sentAt: new Date().toISOString() },
-    }));
+  // 보내기 (발신자): POST .../sent → 응답으로 전체 정산 갱신
+  const handleSend = async (pinId: string, fromUserId: string, toUserId: string) => {
+    const res = await markPinTransferSent(playId, pinId, fromUserId, toUserId);
+    if (!res.data) {
+      Alert.alert('처리 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+      return;
+    }
+    setSettlement(res.data);
   };
 
-  // 보내기 취소 (발신자)
+  // 보내기 취소 (발신자): DELETE .../sent → 응답으로 갱신
   const handleCancelSend = (pinId: string, fromUserId: string, toUserId: string) => {
     Alert.alert(
       '보내기 취소',
@@ -272,19 +282,20 @@ export default function SettlementScreen() {
         { text: '아니오', style: 'cancel' },
         {
           text: '예',
-          onPress: () => {
-            const key = getSettlementKey(pinId, fromUserId, toUserId);
-            setSettlementStates(prev => ({
-              ...prev,
-              [key]: { status: 'pending' },
-            }));
+          onPress: async () => {
+            const res = await cancelPinTransferSent(playId, pinId, fromUserId, toUserId);
+            if (!res.data) {
+              Alert.alert('취소 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
           },
         },
       ]
     );
   };
 
-  // 받기 확인 (수신자)
+  // 받기 확인 (수신자=paidBy): POST .../received → 응답으로 갱신
   const handleConfirmReceive = (pinId: string, fromUserId: string, toUserId: string, amount: number) => {
     const fromUser = getUserById(fromUserId);
     Alert.alert(
@@ -295,16 +306,13 @@ export default function SettlementScreen() {
         {
           text: '받았음',
           style: 'default',
-          onPress: () => {
-            const key = getSettlementKey(pinId, fromUserId, toUserId);
-            setSettlementStates(prev => ({
-              ...prev,
-              [key]: {
-                status: 'completed',
-                sentAt: prev[key]?.sentAt,
-                completedAt: new Date().toISOString()
-              },
-            }));
+          onPress: async () => {
+            const res = await markPinTransferReceived(playId, pinId, fromUserId, toUserId);
+            if (!res.data) {
+              Alert.alert('확인 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
           },
         },
       ]
@@ -339,7 +347,7 @@ export default function SettlementScreen() {
       }),
     })).filter(item => item.settlements.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- getSettlementState 는 컴포넌트 내부 함수라 deps 에 넣으면 매 렌더 무효화.
-  }, [pinSettlements, activeTab, settlementStates]);
+  }, [pinSettlements, activeTab, pinTransferMap]);
 
   if (!play) {
     return (
