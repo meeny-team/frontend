@@ -28,6 +28,7 @@ import {
   fetchCrewById,
   fetchPlaysByCrewId,
   fetchPlayTotalAmount,
+  fetchCrewActivities,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
@@ -37,7 +38,9 @@ import {
   Crew,
   Play,
   MemberSummary,
+  Activity,
 } from '../../api';
+import { activityMessage, activityEmoji, relativeTime } from '../../utils/activityMessage';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
@@ -174,6 +177,8 @@ export default function CrewDetailScreen() {
   const [crew, setCrew] = useState<Crew | null>(null);
   const [plays, setPlays] = useState<Play[]>([]);
   const [playTotals, setPlayTotals] = useState<Record<string, number>>({});
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activitiesExpanded, setActivitiesExpanded] = useState(false);
 
   // Settings modal state
   const [showSettings, setShowSettings] = useState(false);
@@ -207,6 +212,10 @@ export default function CrewDetailScreen() {
         );
         if (canceled) return;
         setPlayTotals(Object.fromEntries(totals));
+
+        const activitiesRes = await fetchCrewActivities(crewId, 50);
+        if (canceled) return;
+        setActivities(activitiesRes.data);
       })();
       return () => {
         canceled = true;
@@ -384,6 +393,33 @@ export default function CrewDetailScreen() {
           </ScrollView>
         </View>
 
+        {/* Activity Feed */}
+        {activities.length > 0 && (
+          <View style={styles.activitiesSection}>
+            <Text style={styles.sectionLabel}>최근 활동</Text>
+            {(activitiesExpanded ? activities : activities.slice(0, 5)).map(a => (
+              <View key={a.id} style={styles.activityCard}>
+                <Text style={styles.activityEmoji}>{activityEmoji(a.type)}</Text>
+                <View style={styles.activityBody}>
+                  <Text style={styles.activityText} numberOfLines={2}>
+                    {activityMessage(a)}
+                  </Text>
+                  <Text style={styles.activityTime}>{relativeTime(a.createdAt)}</Text>
+                </View>
+              </View>
+            ))}
+            {activities.length > 5 && (
+              <TouchableOpacity
+                onPress={() => setActivitiesExpanded(v => !v)}
+                style={styles.activityExpandButton}
+              >
+                <Text style={styles.activityExpandText}>
+                  {activitiesExpanded ? '접기' : `${activities.length - 5}건 더 보기`}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Plays */}
         <View style={styles.playsSection}>
@@ -613,6 +649,43 @@ const styles = StyleSheet.create({
   memberName: {
     fontSize: 12,
     color: colors.secondary,
+  },
+  activitiesSection: {
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  activityCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  activityEmoji: {
+    fontSize: 18,
+    marginTop: 2,
+  },
+  activityBody: {
+    flex: 1,
+  },
+  activityText: {
+    fontSize: 14,
+    color: colors.foreground,
+    lineHeight: 20,
+  },
+  activityTime: {
+    fontSize: 12,
+    color: colors.tertiary,
+    marginTop: 2,
+  },
+  activityExpandButton: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  activityExpandText: {
+    fontSize: 13,
+    color: colors.brand,
+    fontWeight: '500',
   },
   playsSection: {
     padding: spacing.lg,
