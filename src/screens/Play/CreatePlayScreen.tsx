@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Line, Polyline } from 'react-native-svg';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
 import {
@@ -34,6 +35,20 @@ type RouteProps = RouteProp<AuthorizedStackParamList, 'CreatePlay'>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TOTAL_STEPS = 4;
+
+// 로컬 시간 기준 YYYY-MM-DD. toISOString 은 UTC 라 시간대에 따라 하루 어긋날 수 있어 사용 금지.
+function fmtLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDate(s: string): Date {
+  if (!s) return new Date();
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
 
 // ============ Icons ============
 
@@ -81,8 +96,10 @@ export default function CreatePlayScreen() {
   const [title, setTitle] = useState('');
   const [type, setType] = useState<PlayType | null>(null);
   const [customType, setCustomType] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(fmtLocalDate(new Date()));
   const [endDate, setEndDate] = useState('');
+  const [startPickerVisible, setStartPickerVisible] = useState(false);
+  const [endPickerVisible, setEndPickerVisible] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [locationName, setLocationName] = useState('');
 
@@ -272,28 +289,59 @@ export default function CreatePlayScreen() {
   const renderStep2 = () => (
     <View style={styles.stepContent}>
       <Text style={styles.inputLabel}>시작 날짜</Text>
-      <TextInput
+      <TouchableOpacity
         style={styles.dateInput}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.muted}
-        value={startDate}
-        onChangeText={setStartDate}
-        keyboardType="numbers-and-punctuation"
-      />
+        onPress={() => setStartPickerVisible(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.dateInputText, !startDate && styles.dateInputPlaceholder]}>
+          {startDate || 'YYYY-MM-DD'}
+        </Text>
+      </TouchableOpacity>
 
       <Text style={[styles.inputLabel, { marginTop: spacing.xl }]}>종료 날짜 (선택)</Text>
-      <TextInput
+      <TouchableOpacity
         style={styles.dateInput}
-        placeholder="YYYY-MM-DD"
-        placeholderTextColor={colors.muted}
-        value={endDate}
-        onChangeText={setEndDate}
-        keyboardType="numbers-and-punctuation"
-      />
+        onPress={() => setEndPickerVisible(true)}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.dateInputText, !endDate && styles.dateInputPlaceholder]}>
+          {endDate || 'YYYY-MM-DD'}
+        </Text>
+      </TouchableOpacity>
 
       <Text style={styles.dateHint}>
         종료 날짜는 당일 플레이면 비워두세요
       </Text>
+
+      <DateTimePickerModal
+        isVisible={startPickerVisible}
+        mode="date"
+        date={parseLocalDate(startDate)}
+        onConfirm={d => {
+          setStartDate(fmtLocalDate(d));
+          setStartPickerVisible(false);
+        }}
+        onCancel={() => setStartPickerVisible(false)}
+        locale="ko_KR"
+        confirmTextIOS="확인"
+        cancelTextIOS="취소"
+      />
+      <DateTimePickerModal
+        isVisible={endPickerVisible}
+        mode="date"
+        // 종료 picker 의 초기값은 endDate 있으면 그것, 없으면 startDate (혹은 오늘)
+        date={endDate ? parseLocalDate(endDate) : parseLocalDate(startDate)}
+        minimumDate={startDate ? parseLocalDate(startDate) : undefined}
+        onConfirm={d => {
+          setEndDate(fmtLocalDate(d));
+          setEndPickerVisible(false);
+        }}
+        onCancel={() => setEndPickerVisible(false)}
+        locale="ko_KR"
+        confirmTextIOS="확인"
+        cancelTextIOS="취소"
+      />
     </View>
   );
 
@@ -552,10 +600,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    fontSize: 16,
-    color: colors.foreground,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  dateInputText: {
+    fontSize: 16,
+    color: colors.foreground,
+  },
+  dateInputPlaceholder: {
+    color: colors.muted,
   },
   dateHint: {
     fontSize: 13,
