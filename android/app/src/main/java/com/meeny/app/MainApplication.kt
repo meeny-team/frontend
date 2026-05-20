@@ -1,4 +1,4 @@
-package com.meenyapp
+package com.meeny.app
 
 import android.app.Application
 import com.facebook.react.PackageList

@@ -1,4 +1,4 @@
-package com.meenyapp
+package com.meeny.app
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
