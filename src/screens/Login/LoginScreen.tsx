@@ -83,6 +83,10 @@ export default function LoginScreen() {
     loginWithApple().catch(() => undefined);
   };
 
+  const handleGuest = () => {
+    loginAsGuest().catch(() => undefined);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -124,7 +128,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.guestButton} onPress={loginAsGuest} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.guestButton} onPress={handleGuest} activeOpacity={0.7}>
             <Text style={styles.guestButtonText}>둘러보기</Text>
             <ArrowRightIcon />
           </TouchableOpacity>
