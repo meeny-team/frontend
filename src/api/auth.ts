@@ -27,6 +27,14 @@ export async function socialLogin(
   });
 }
 
+// 둘러보기: 공유 데모 계정으로 토큰 발급. 사용자 입력 없음.
+export async function guestLogin(): Promise<TokenResponse> {
+  return request<TokenResponse>('/api/auth/guest', {
+    method: 'POST',
+    auth: false,
+  });
+}
+
 export async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
   return request<TokenResponse>('/api/auth/refresh', {
     method: 'POST',

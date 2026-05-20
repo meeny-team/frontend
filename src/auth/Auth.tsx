@@ -15,9 +15,10 @@ import { Platform } from 'react-native';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { login as kakaoLogin, logout as kakaoLogout } from '@react-native-seoul/kakao-login';
 import appleAuth from '@invertase/react-native-apple-authentication';
-import { CURRENT_USER, User } from '../api';
+import { User } from '../api';
 import {
   socialLogin,
+  guestLogin,
   fetchMe,
   logout as apiLogout,
   AuthApiError,
@@ -39,7 +40,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   loginWithKakao: () => Promise<void>;
   loginWithApple: () => Promise<void>;
-  loginAsGuest: () => void;
+  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   // 프로필 수정 후 백엔드에서 받은 최신 프로필을 그대로 반영. 게스트(토큰 없음)는 호출 의미가 없어 사용처에서 분기.
   applyUser: (next: MemberProfile | User) => void;
@@ -158,9 +159,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginAsGuest = () => {
-    // "둘러보기": 백엔드 호출 없이 mock 사용자로 진입
-    setUser(CURRENT_USER);
+  const loginAsGuest = async () => {
+    // "둘러보기": 백엔드 공유 데모 계정으로 자동 로그인. 실제 토큰을 받아오므로 이후 모든 API 호출이 정상 동작.
+    try {
+      const issued = await guestLogin();
+      await completeLogin(issued);
+    } catch (err) {
+      if (err instanceof AuthApiError) {
+        console.warn('[auth] guest login backend rejected:', err.code, err.message);
+      } else {
+        console.warn('[auth] guest login failed:', err);
+      }
+      throw err;
+    }
   };
 
   const logout = async () => {
