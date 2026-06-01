@@ -27,3 +27,7 @@ export const API_BASE_URL =
 // 참고: client ID 는 secret 이 아닌 공개 식별자다. 환경별로 다른 ID 가 필요해지면 __DEV__ 로 분기.
 export const GOOGLE_WEB_CLIENT_ID =
   '257431637052-18j21pbcm3dk5uldiatu0hi7t8l3ls0c.apps.googleusercontent.com';
+
+// Sentry DSN — 공개 식별자라 코드 하드코딩 OK. 비어 있으면 sentry.ts 가 자동으로 비활성화.
+export const SENTRY_DSN =
+  'https://9e40c608f97309a01ed9ae7940a7ed79@o4511488644481024.ingest.us.sentry.io/4511488645988352';
