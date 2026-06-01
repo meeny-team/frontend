@@ -7,6 +7,7 @@
  */
 
 import { Platform } from 'react-native';
+import { SENTRY_DSN as ENV_SENTRY_DSN } from '@env';
 
 const PROD_API_BASE_URL = 'https://api.meeny.store';
 
@@ -28,6 +29,6 @@ export const API_BASE_URL =
 export const GOOGLE_WEB_CLIENT_ID =
   '257431637052-18j21pbcm3dk5uldiatu0hi7t8l3ls0c.apps.googleusercontent.com';
 
-// Sentry DSN — 공개 식별자라 코드 하드코딩 OK. 비어 있으면 sentry.ts 가 자동으로 비활성화.
-export const SENTRY_DSN =
-  'https://9e40c608f97309a01ed9ae7940a7ed79@o4511488644481024.ingest.us.sentry.io/4511488645988352';
+// Sentry DSN — .env 의 SENTRY_DSN 를 빌드타임에 주입 (react-native-dotenv).
+// 비어 있으면 sentry.ts 가 자동으로 비활성화. 환경별로 다른 DSN 쓰고 싶으면 .env 만 갈아끼우면 됨.
+export const SENTRY_DSN = ENV_SENTRY_DSN ?? '';
