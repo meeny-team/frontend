@@ -31,6 +31,7 @@ module.exports = {
     '^@react-native-async-storage/async-storage$':
       '@react-native-async-storage/async-storage/jest/async-storage-mock',
     '^react-native$': '<rootDir>/__tests__/__mocks__/react-native.js',
+    '^@env$': '<rootDir>/__tests__/__mocks__/env.js',
   },
   globals: {
     __DEV__: true,
