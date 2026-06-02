@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Text,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -125,31 +126,44 @@ export default function SettlementScreen() {
   // 백엔드 정산 응답 전체. pinTransfers 의 sentAt/receivedAt 으로 각 송금 상태 도출. null = 미로드.
   const [settlement, setSettlement] = useState<PlaySettlement | null>(null);
   const [closing, setClosing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const settledAt = settlement?.settledAt ?? null;
+
+  // 데이터 로드: useFocusEffect 와 pull-to-refresh 에서 공유.
+  const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
+    const playRes = await fetchPlayById(playId);
+    if (signal?.canceled || !playRes.data) return;
+    setPlay(playRes.data);
+
+    const [pinsRes, totalRes, settlementRes] = await Promise.all([
+      fetchPinsByPlayId(playId),
+      fetchPlayTotalAmount(playId),
+      fetchPlaySettlement(playId),
+    ]);
+    if (signal?.canceled) return;
+    setPins(pinsRes.data);
+    setTotalAmount(totalRes.data);
+    setSettlement(settlementRes.data ?? null);
+  }, [playId]);
 
   useFocusEffect(
     useCallback(() => {
-      let canceled = false;
-      (async () => {
-        const playRes = await fetchPlayById(playId);
-        if (canceled || !playRes.data) return;
-        setPlay(playRes.data);
-
-        const [pinsRes, totalRes, settlementRes] = await Promise.all([
-          fetchPinsByPlayId(playId),
-          fetchPlayTotalAmount(playId),
-          fetchPlaySettlement(playId),
-        ]);
-        if (canceled) return;
-        setPins(pinsRes.data);
-        setTotalAmount(totalRes.data);
-        setSettlement(settlementRes.data ?? null);
-      })();
+      const signal = { canceled: false };
+      loadAll(signal);
       return () => {
-        canceled = true;
+        signal.canceled = true;
       };
-    }, [playId]),
+    }, [loadAll]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadAll();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadAll]);
 
   // 정산 마감: 백엔드가 모든 송금이 received 마킹됐는지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
   const handleClose = () => {
@@ -372,7 +386,17 @@ export default function SettlementScreen() {
         <View style={styles.headerRight} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
         {/* Play Info */}
         <View style={styles.playInfo}>
           <Text style={styles.playTitle}>{play.title}</Text>

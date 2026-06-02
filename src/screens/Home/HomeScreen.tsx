@@ -15,6 +15,7 @@ import {
   Modal,
   Dimensions,
   ImageBackground,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -266,6 +267,7 @@ export default function HomeScreen() {
   const [showAddOptions, setShowAddOptions] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [myCrews, setMyCrews] = useState<Crew[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   // crewId → { plays: 그 크루의 플레이 수, totalAmount: 모든 플레이의 결제액 합 }
   // 카드가 카드 안에서 직접 비동기 호출하면 N+1 폭증 — 부모에서 한 번에 모아 prop 으로 전달.
   const [crewExtras, setCrewExtras] = useState<Record<string, { playCount: number; totalAmount: number }>>({});
@@ -302,12 +304,32 @@ export default function HomeScreen() {
     }, [loadCrews])
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadCrews();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadCrews]);
+
   const heroCrew = myCrews[0];
   const otherCrews = myCrews.slice(1);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
         {/* Top Bar */}
         <View style={styles.topBar}>
           <Text style={styles.logo}>meeny</Text>
