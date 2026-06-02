@@ -21,7 +21,8 @@ import SettingsScreen from '../screens/Settings/SettingsScreen';
 import LegalScreen, { LegalType } from '../screens/Legal/LegalScreen';
 
 export type AuthorizedStackParamList = {
-  Home: undefined;
+  // inviteCode 가 들어 있으면 HomeScreen 이 자동 join 시도 (meeny://invite/{code} 딥링크)
+  Home: { inviteCode?: string } | undefined;
   CrewDetail: { crewId: string };
   CreateCrew: undefined;
   PlayDetail: { playId: string };

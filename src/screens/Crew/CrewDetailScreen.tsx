@@ -303,11 +303,14 @@ export default function CrewDetailScreen() {
   };
 
   // Handle share invite
+  // 딥링크 (meeny://invite/CODE) 와 6자리 코드를 함께 보내, 앱 설치자는 한 번 탭으로 가입,
+  // 미설치자는 스토어 안내 후 코드를 직접 입력할 수 있게 한다.
   const handleShareInvite = async () => {
     if (!crew) return;
+    const link = `meeny://invite/${inviteCode}`;
     try {
       await Share.share({
-        message: `${crew.name} 크루에 초대합니다!\n\n초대 코드: ${inviteCode}\n\nMeeny 앱에서 코드를 입력하세요.`,
+        message: `${crew.name} 크루에 초대합니다!\n\n초대 링크: ${link}\n초대 코드: ${inviteCode}\n\n앱이 없으면 코드를 직접 입력해서 참여하세요.`,
       });
     } catch (error) {
       console.error(error);
