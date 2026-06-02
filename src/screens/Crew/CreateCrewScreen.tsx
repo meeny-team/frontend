@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import Svg, { Line, Circle } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { createCrew, uploadPickedImage, PickedImageAsset } from '../../api';
@@ -79,14 +79,7 @@ export default function CreateCrewScreen() {
 
     // 키보드 닫힌 후 이미지 피커 실행
     requestAnimationFrame(() => {
-      launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        selectionLimit: 1,
-        includeBase64: false,
-      }).then(response => {
+      pickImage('crew').then(response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
