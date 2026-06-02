@@ -23,9 +23,11 @@ import {
   fetchPlayTotalAmount,
   fetchPlaySettlement,
   closePlaySettlement,
+  forceClosePlaySettlement,
   markPinTransferSent,
   markPinTransferReceived,
   cancelPinTransferSent,
+  cancelPinTransferReceived,
   formatCurrency,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
@@ -151,7 +153,36 @@ export default function SettlementScreen() {
     }, [playId]),
   );
 
-  // 정산 마감: 백엔드가 모든 송금이 received 마킹됐는지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
+  // 정산 마감 흐름:
+  // 1) closePlaySettlement 시도. 성공이면 종료
+  // 2) PLAY_NOT_SETTLEABLE 실패 시, 작성자에게만 "강제 마감하시겠습니까?" 추가 alert 제안 (데드락 해소)
+  const isPlayAuthor = !!play && !!myId && play.createdBy === myId;
+
+  const promptForceClose = useCallback(() => {
+    Alert.alert(
+      '강제 마감',
+      '수신자가 아직 "받음" 표시를 누르지 않은 송금이 남아 있어요. 작성자 권한으로 강제 마감하시겠습니까? 강제 마감 이력은 활동 로그에 기록됩니다.',
+      [
+        { text: '아니오', style: 'cancel' },
+        {
+          text: '강제 마감',
+          style: 'destructive',
+          onPress: async () => {
+            setClosing(true);
+            const res = await forceClosePlaySettlement(playId);
+            setClosing(false);
+            if (!res.data) {
+              Alert.alert('강제 마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
+            Alert.alert('정산 마감 완료', '정산이 강제 마감되었습니다.');
+          },
+        },
+      ],
+    );
+  }, [playId]);
+
   const handleClose = () => {
     Alert.alert(
       '정산 마감',
@@ -167,7 +198,12 @@ export default function SettlementScreen() {
             const res = await closePlaySettlement(playId);
             setClosing(false);
             if (!res.data) {
-              Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              // PLAY_NOT_SETTLEABLE 은 작성자에게만 강제 마감 옵션 제안. 나머지는 일반 실패 표시.
+              if (isPlayAuthor && (res.message ?? '').includes('받음 처리')) {
+                promptForceClose();
+              } else {
+                Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              }
               return;
             }
             setSettlement(res.data);
@@ -300,7 +336,7 @@ export default function SettlementScreen() {
     const fromUser = getUserById(fromUserId);
     Alert.alert(
       '정산 확인',
-      `${fromUser?.nickname}님에게 ${formatCurrency(amount)}을 받으셨나요?\n\n⚠️ 확인 후에는 되돌릴 수 없습니다.`,
+      `${fromUser?.nickname}님에게 ${formatCurrency(amount)}을 받으셨나요?`,
       [
         { text: '아니오', style: 'cancel' },
         {
@@ -310,6 +346,29 @@ export default function SettlementScreen() {
             const res = await markPinTransferReceived(playId, pinId, fromUserId, toUserId);
             if (!res.data) {
               Alert.alert('확인 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
+          },
+        },
+      ]
+    );
+  };
+
+  // 받기 취소 (수신자가 잘못 눌렀을 때): DELETE .../received → 응답으로 갱신. sent 마크는 유지.
+  const handleCancelReceive = (pinId: string, fromUserId: string, toUserId: string) => {
+    Alert.alert(
+      '받음 취소',
+      '잘못 눌렀을 때 되돌릴 수 있어요. 받음 표시를 취소하시겠습니까?',
+      [
+        { text: '아니오', style: 'cancel' },
+        {
+          text: '취소',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await cancelPinTransferReceived(playId, pinId, fromUserId, toUserId);
+            if (!res.data) {
+              Alert.alert('취소 실패', res.message ?? '잠시 후 다시 시도해주세요.');
               return;
             }
             setSettlement(res.data);
@@ -605,10 +664,21 @@ export default function SettlementScreen() {
                               )}
 
                               {state.status === 'completed' && (
-                                <View style={[styles.statusBadge, styles.statusBadgeCompleted]}>
-                                  <CheckIcon color={colors.positive} />
-                                  <Text style={[styles.statusBadgeText, styles.statusBadgeTextCompleted]}>완료</Text>
-                                </View>
+                                <>
+                                  <View style={[styles.statusBadge, styles.statusBadgeCompleted]}>
+                                    <CheckIcon color={colors.positive} />
+                                    <Text style={[styles.statusBadgeText, styles.statusBadgeTextCompleted]}>완료</Text>
+                                  </View>
+                                  {/* 정산 마감 전, 수신자 본인은 받음 취소 가능 (sent 마크는 유지). */}
+                                  {isToMe && !settledAt && (
+                                    <TouchableOpacity
+                                      style={styles.cancelButton}
+                                      onPress={() => handleCancelReceive(settlement.pinId, settlement.from, settlement.to)}
+                                    >
+                                      <Text style={styles.cancelButtonText}>받음 취소</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </>
                               )}
                             </View>
                           </View>
