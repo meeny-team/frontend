@@ -20,10 +20,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Circle, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
+import { CategoryStatsCard } from '../../components/CategoryStatsCard';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
   fetchPlayTotalAmount,
+  fetchPlayStats,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
@@ -32,6 +34,7 @@ import {
   Pin,
   Play,
   MemberSummary,
+  CategoryStats,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -160,6 +163,7 @@ export default function PlayDetailScreen() {
   const [play, setPlay] = useState<Play | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [stats, setStats] = useState<CategoryStats | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,13 +173,15 @@ export default function PlayDetailScreen() {
         if (canceled || !playRes.data) return;
         setPlay(playRes.data);
 
-        const [pinsRes, totalRes] = await Promise.all([
+        const [pinsRes, totalRes, statsRes] = await Promise.all([
           fetchPinsByPlayId(playId),
           fetchPlayTotalAmount(playId),
+          fetchPlayStats(playId),
         ]);
         if (canceled) return;
         setPins(pinsRes.data);
         setTotalAmount(totalRes.data);
+        setStats(statsRes.data ?? null);
       })();
       return () => {
         canceled = true;
@@ -290,6 +296,9 @@ export default function PlayDetailScreen() {
             <Text style={styles.statValue}>{formatCurrency(avgAmount)}</Text>
           </View>
         </View>
+
+        {/* Category Stats */}
+        {stats && <CategoryStatsCard stats={stats} />}
 
         {/* Pins Timeline */}
         <View style={styles.pinsSection}>

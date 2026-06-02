@@ -18,6 +18,7 @@ export * from './crew';
 export * from './play';
 export * from './pin';
 export * from './settlement';
+export * from './stats';
 export * from './uploads';
 export * from './activity';
 
