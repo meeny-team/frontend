@@ -19,7 +19,6 @@ import Svg, { Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { Avatar } from '../../components/Avatar';
 import { useAuth } from '../../auth/Auth';
-import { getAccessToken } from '../../auth/session';
 import { withdrawCurrentUser } from '../../api';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -48,7 +47,7 @@ function ChevronRightIcon({ size = 16, color = colors.muted }: { size?: number; 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { user, logout } = useAuth();
+  const { user, isGuest, logout } = useAuth();
   const nickname = user?.nickname ?? '게스트';
   const [withdrawing, setWithdrawing] = useState(false);
 
@@ -80,7 +79,19 @@ export default function SettingsScreen() {
     );
   };
 
-  const isLoggedIn = !!getAccessToken();
+  // 게스트(공유 데모 계정) 는 회원탈퇴를 노출하지 않는다 — 탈퇴는 데모 계정 자체를 망가뜨릴 수 있고 의미도 없음.
+  // 대신 "둘러보기 모드" 안내와 정식 로그인 전환 CTA 를 노출.
+  const showWithdraw = !!user && !isGuest;
+  const promptUpgradeFromGuest = () => {
+    Alert.alert(
+      '둘러보기 모드',
+      '지금은 둘러보기(게스트) 모드예요. 정식 로그인하면 내 데이터만 안전하게 분리됩니다. 로그아웃 후 로그인 화면으로 이동할까요?',
+      [
+        { text: '아니오', style: 'cancel' },
+        { text: '로그아웃', onPress: () => logout() },
+      ],
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -150,11 +161,25 @@ export default function SettingsScreen() {
 
         <View style={styles.divider} />
 
+        {isGuest && (
+          <View style={styles.section}>
+            <View style={styles.guestNotice}>
+              <Text style={styles.guestNoticeTitle}>둘러보기 모드</Text>
+              <Text style={styles.guestNoticeBody}>
+                지금은 공유 데모 계정이에요. 내 데이터를 안전하게 쓰려면 정식 로그인이 필요해요.
+              </Text>
+              <TouchableOpacity style={styles.guestUpgradeButton} onPress={promptUpgradeFromGuest}>
+                <Text style={styles.guestUpgradeText}>정식 로그인하기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <TouchableOpacity style={styles.menuRow} onPress={logout} activeOpacity={0.6}>
             <Text style={styles.logoutText}>로그아웃</Text>
           </TouchableOpacity>
-          {isLoggedIn && (
+          {showWithdraw && (
             <>
               <View style={styles.rowDivider} />
               <TouchableOpacity
@@ -280,5 +305,35 @@ const styles = StyleSheet.create({
   withdrawText: {
     fontSize: 14,
     color: colors.tertiary,
+  },
+  guestNotice: {
+    marginHorizontal: spacing.xl,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+  },
+  guestNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.foreground,
+    marginBottom: 6,
+  },
+  guestNoticeBody: {
+    fontSize: 13,
+    color: colors.secondary,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  guestUpgradeButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.brand,
+    borderRadius: 999,
+  },
+  guestUpgradeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.foreground,
   },
 });

@@ -15,8 +15,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { TokenResponse } from '../api/auth';
 
 const KEY = 'meeny.tokens.v1';
+const GUEST_KEY = 'meeny.guest.v1';
 
 let cached: TokenResponse | null = null;
+let guestCached = false;
 let inflightRefresh: Promise<TokenResponse> | null = null;
 let onExpired: (() => void) | null = null;
 
@@ -28,8 +30,15 @@ export function getRefreshToken(): string | null {
   return cached?.refreshToken ?? null;
 }
 
+// 게스트 모드 여부 — loginAsGuest 시 true. 회원탈퇴/유료 기능 등 게스트가 막혀야 하는 분기에 사용.
+export function isGuestSession(): boolean {
+  return guestCached;
+}
+
 export async function loadFromStorage(): Promise<TokenResponse | null> {
   const raw = await AsyncStorage.getItem(KEY);
+  const guestRaw = await AsyncStorage.getItem(GUEST_KEY);
+  guestCached = guestRaw === '1';
   if (!raw) {
     cached = null;
     return null;
@@ -43,14 +52,22 @@ export async function loadFromStorage(): Promise<TokenResponse | null> {
   }
 }
 
-export async function saveTokens(tokens: TokenResponse): Promise<void> {
+export async function saveTokens(tokens: TokenResponse, isGuest = false): Promise<void> {
   cached = tokens;
+  guestCached = isGuest;
   await AsyncStorage.setItem(KEY, JSON.stringify(tokens));
+  if (isGuest) {
+    await AsyncStorage.setItem(GUEST_KEY, '1');
+  } else {
+    await AsyncStorage.removeItem(GUEST_KEY);
+  }
 }
 
 export async function clearSession(): Promise<void> {
   cached = null;
+  guestCached = false;
   await AsyncStorage.removeItem(KEY);
+  await AsyncStorage.removeItem(GUEST_KEY);
 }
 
 export function setOnSessionExpired(cb: (() => void) | null): void {
