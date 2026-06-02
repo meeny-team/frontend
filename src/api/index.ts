@@ -21,8 +21,5 @@ export * from './settlement';
 export * from './uploads';
 export * from './activity';
 
-// Mock Data (for direct access)
-export { CURRENT_USER, users, crews, plays, pins } from './mock';
-
-// Legacy alias for backward compatibility
-export { pins as DUMMY_PINS } from './mock';
+// 둘러보기 모드 게스트 fixture
+export { CURRENT_USER, users } from './mock';

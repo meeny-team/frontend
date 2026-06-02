@@ -85,7 +85,7 @@ export default function CreatePlayScreen() {
   const route = useRoute<RouteProps>();
   const { crewId } = route.params;
   const { user } = useAuth();
-  // mock 데이터의 userId 는 string("u1"), 백엔드 user.id 는 number → 비교 시 string 으로 통일
+  // AuthContext.user 는 MemberProfile(id:number) | User(id:string) — 비교 시 string 으로 통일
   const myId = user ? String(user.id) : null;
 
   const [crew, setCrew] = useState<Crew | null>(null);
