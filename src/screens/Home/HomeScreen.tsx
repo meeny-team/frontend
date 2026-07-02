@@ -15,6 +15,7 @@ import {
   Modal,
   Dimensions,
   ImageBackground,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -87,13 +88,17 @@ const JoinModal = memo(({ visible, onClose, onJoinSuccess }: JoinModalProps) => 
     setIsJoining(true);
     try {
       const response = await joinCrewByCode(code.trim());
-      if (response.status === 200) {
+      if (response.status === 200 && response.data) {
         setCode('');
         onClose();
         onJoinSuccess();
+        return;
       }
+      // 실패: 백엔드 메시지(INVALID_INVITE_CODE / ALREADY_JOINED_CREW 등)를 그대로 노출
+      Alert.alert('참여 실패', response.message ?? '잘못된 초대 코드입니다.');
     } catch (error) {
       console.error('Failed to join crew:', error);
+      Alert.alert('참여 실패', '네트워크 오류로 참여하지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsJoining(false);
     }
