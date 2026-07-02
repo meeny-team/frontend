@@ -20,7 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
@@ -237,14 +237,7 @@ export default function CrewDetailScreen() {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
-      launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        selectionLimit: 1,
-        includeBase64: false,
-      }).then(async response => {
+      pickImage('crew').then(async response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');

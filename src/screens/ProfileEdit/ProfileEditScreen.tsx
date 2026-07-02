@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
@@ -89,14 +89,7 @@ export default function ProfileEditScreen() {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
-      launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        selectionLimit: 1,
-        includeBase64: false,
-      }).then(response => {
+      pickImage('profile').then(response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
