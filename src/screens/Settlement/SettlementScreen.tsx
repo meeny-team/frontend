@@ -11,12 +11,14 @@ import {
   TouchableOpacity,
   Text,
   Alert,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
+import { bankName } from '../../data/banks';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
@@ -104,6 +106,18 @@ function SendIcon() {
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.foreground} strokeWidth={2}>
       <Line x1="22" y1="2" x2="11" y2="13" />
       <Path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </Svg>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.foreground} strokeWidth={2}>
+      <Circle cx="18" cy="5" r="3" />
+      <Circle cx="6" cy="12" r="3" />
+      <Circle cx="18" cy="19" r="3" />
+      <Line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <Line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
     </Svg>
   );
 }
@@ -293,6 +307,33 @@ export default function SettlementScreen() {
         },
       ]
     );
+  };
+
+  // 송금 안내 공유: 시스템 공유 시트로 상대 계좌 정보 + 금액을 텍스트로 내보낸다.
+  // 시트 안에 "복사" 옵션이 iOS/Android 기본 제공되므로 별도 클립보드 라이브러리 없이 복사도 커버.
+  const handleShareTransfer = async (pinId: string, fromUserId: string, toUserId: string, amount: number) => {
+    const toUser = getUserById(toUserId);
+    const mark = pinTransferMap.get(`${pinId}:${fromUserId}:${toUserId}`);
+    const nickname = toUser?.nickname ?? '상대';
+    const amountStr = formatCurrency(amount);
+
+    const bankLabel = bankName(mark?.toBankCode);
+    const accountNumber = mark?.toAccountNumber;
+    const holder = mark?.toAccountHolderName;
+
+    let message: string;
+    if (bankLabel && accountNumber) {
+      const holderLine = holder ? `\n예금주: ${holder}` : '';
+      message = `${nickname}님께 ${amountStr} 송금\n${bankLabel} ${accountNumber}${holderLine}\n\n- meeny`;
+    } else {
+      // 계좌 미등록: 금액만 안내하고 상대에게 계좌 확인을 요청
+      message = `${nickname}님께 ${amountStr} 정산 요청드려요.\n계좌 정보가 아직 등록되지 않아 상대에게 확인이 필요해요.\n\n- meeny`;
+    }
+    try {
+      await Share.share({ message });
+    } catch {
+      // 사용자가 취소한 경우 등 — 조용히 무시
+    }
   };
 
   // 받기 확인 (수신자=paidBy): POST .../received → 응답으로 갱신
@@ -560,6 +601,17 @@ export default function SettlementScreen() {
 
                             {/* Status & Actions */}
                             <View style={styles.settlementActions}>
+                              {/* 송금자 관점 공유 버튼: 상대 계좌를 시스템 공유 시트로 내보내 카톡/문자/복사 로 이어짐 */}
+                              {isFromMe && state.status !== 'completed' && (
+                                <TouchableOpacity
+                                  style={styles.shareButton}
+                                  onPress={() => handleShareTransfer(settlement.pinId, settlement.from, settlement.to, settlement.amount)}
+                                >
+                                  <ShareIcon />
+                                  <Text style={styles.shareButtonText}>공유</Text>
+                                </TouchableOpacity>
+                              )}
+
                               {state.status === 'pending' && (
                                 <>
                                   {isFromMe ? (
@@ -972,6 +1024,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   sendButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  shareButtonText: {
     fontSize: 13,
     fontWeight: '600',
     color: colors.foreground,

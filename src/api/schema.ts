@@ -22,12 +22,19 @@ export interface User {
   nickname: string;
   profileImage?: string;
   bio?: string;
+  bankCode?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
 }
 
 export interface UpdateUserRequest {
   nickname?: string;
   profileImage?: string;
   bio?: string;
+  // 빈 문자열은 등록 해제로 서버가 정규화한다. null 로 보내면 기존 값 유지.
+  bankCode?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
 }
 
 // ============================================
@@ -35,10 +42,14 @@ export interface UpdateUserRequest {
 // ============================================
 
 // 백엔드 MemberSummary 와 매칭. 크루/플레이 응답에 같이 내려와서 화면이 별도 회원 조회 없이 사용.
+// 계좌 정보는 같은 크루 멤버에게만 노출된다(백엔드에서 스코프 제한).
 export interface MemberSummary {
   id: string;
   nickname: string;
   profileImage?: string;
+  bankCode?: string;
+  accountNumber?: string;
+  accountHolderName?: string;
 }
 
 export interface Crew {
