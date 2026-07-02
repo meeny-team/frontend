@@ -31,6 +31,9 @@ interface BackendTransfer {
   toMemberId: number;
   toNickname: string;
   amount: number;
+  toBankCode: string | null;
+  toAccountNumber: string | null;
+  toAccountHolderName: string | null;
 }
 
 interface BackendPinTransfer {
@@ -42,6 +45,9 @@ interface BackendPinTransfer {
   amount: number;
   sentAt: string | null;
   receivedAt: string | null;
+  toBankCode: string | null;
+  toAccountNumber: string | null;
+  toAccountHolderName: string | null;
 }
 
 interface BackendPlaySettlement {
@@ -67,6 +73,9 @@ export interface SettlementTransfer {
   toMemberId: string;
   toNickname: string;
   amount: number;
+  toBankCode?: string;
+  toAccountNumber?: string;
+  toAccountHolderName?: string;
 }
 
 export interface PinTransfer {
@@ -78,6 +87,9 @@ export interface PinTransfer {
   amount: number;
   sentAt: string | null;
   receivedAt: string | null;
+  toBankCode?: string;
+  toAccountNumber?: string;
+  toAccountHolderName?: string;
 }
 
 export interface PlaySettlement {
@@ -107,6 +119,9 @@ function mapSettlement(b: BackendPlaySettlement): PlaySettlement {
       toMemberId: String(t.toMemberId),
       toNickname: t.toNickname,
       amount: t.amount,
+      toBankCode: t.toBankCode ?? undefined,
+      toAccountNumber: t.toAccountNumber ?? undefined,
+      toAccountHolderName: t.toAccountHolderName ?? undefined,
     })),
     pinTransfers: (b.pinTransfers ?? []).map(p => ({
       pinId: String(p.pinId),
@@ -117,6 +132,9 @@ function mapSettlement(b: BackendPlaySettlement): PlaySettlement {
       amount: p.amount,
       sentAt: p.sentAt,
       receivedAt: p.receivedAt,
+      toBankCode: p.toBankCode ?? undefined,
+      toAccountNumber: p.toAccountNumber ?? undefined,
+      toAccountHolderName: p.toAccountHolderName ?? undefined,
     })),
   };
 }
