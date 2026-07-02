@@ -123,6 +123,22 @@ export async function leaveCrew(crewId: string): Promise<ApiResponse<boolean>> {
   }
 }
 
+// 소유권 양도 — 현재 owner 만 호출, 대상은 크루 멤버.
+export async function transferCrewOwnership(
+  crewId: string,
+  newOwnerId: string,
+): Promise<ApiResponse<Crew | null>> {
+  try {
+    const data = await request<BackendCrewResponse>(`/api/crews/${crewId}/owner`, {
+      method: 'POST',
+      body: { newOwnerId: Number(newOwnerId) },
+    });
+    return { status: 200, data: mapCrew(data), message: '소유권이 양도되었습니다.' };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
+
 // 백엔드에는 별도 크루 삭제 엔드포인트가 없음 — 호환을 위해 탈퇴(leave) 로 alias.
 // 모든 멤버가 탈퇴하면 사실상 비어 있는 크루가 된다.
 export async function deleteCrew(crewId: string): Promise<ApiResponse<boolean>> {
