@@ -154,6 +154,22 @@ export async function closePlaySettlement(
   }
 }
 
+// 작성자 강제 마감 — 미수신 송금이 남아 있어도 마감. reason 은 감사 로그용. 권한: play.createdBy = caller.
+export async function forceClosePlaySettlement(
+  playId: string,
+  reason?: string,
+): Promise<ApiResponse<PlaySettlement | null>> {
+  try {
+    const data = await request<BackendPlaySettlement>(`/api/plays/${playId}/settlement/force-close`, {
+      method: 'POST',
+      body: { reason: reason ?? '' },
+    });
+    return { status: 200, data: mapSettlement(data), message: '정산이 강제 마감되었습니다.' };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
+
 function transferUrl(playId: string, pinId: string, fromMemberId: string, toMemberId: string, suffix: 'sent' | 'received'): string {
   return `/api/plays/${playId}/pins/${pinId}/transfers/${fromMemberId}/${toMemberId}/${suffix}`;
 }
@@ -205,6 +221,24 @@ export async function markPinTransferReceived(
     const data = await request<BackendPlaySettlement>(
       transferUrl(playId, pinId, fromMemberId, toMemberId, 'received'),
       { method: 'POST' },
+    );
+    return { status: 200, data: mapSettlement(data) };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
+
+// 수신자 "받았음"을 잘못 눌렀을 때 되돌림. sent 마크는 유지. 권한: to = caller. 받음 안된 상태면 409 TRANSFER_NOT_RECEIVED.
+export async function cancelPinTransferReceived(
+  playId: string,
+  pinId: string,
+  fromMemberId: string,
+  toMemberId: string,
+): Promise<ApiResponse<PlaySettlement | null>> {
+  try {
+    const data = await request<BackendPlaySettlement>(
+      transferUrl(playId, pinId, fromMemberId, toMemberId, 'received'),
+      { method: 'DELETE' },
     );
     return { status: 200, data: mapSettlement(data) };
   } catch (err) {
