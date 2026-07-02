@@ -12,10 +12,11 @@ import {
   Text,
   TextInput,
   Alert,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import Svg, { Path, Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, Path, Line, Polyline } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
 import {
@@ -28,9 +29,13 @@ import {
   fetchCrewById,
   updatePlay,
   deletePlay,
+  uploadPickedImage,
+  PickedImageAsset,
 } from '../../api';
+import { pickImage } from '../../utils/imagePicker';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
+import { PinImagePickerModal } from './PinImagePickerModal';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PlaySettings'>;
 
@@ -77,6 +82,17 @@ function TrashIcon() {
   );
 }
 
+function CameraIcon({ size = 22, color = colors.muted }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5}>
+      <Circle cx="12" cy="13" r="4" />
+      <Line x1="12" y1="5" x2="12" y2="3" />
+      <Line x1="5" y1="8" x2="5" y2="8.01" />
+      <Line x1="19" y1="8" x2="19" y2="8.01" />
+    </Svg>
+  );
+}
+
 const PLAY_TYPES: PlayType[] = ['travel', 'date', 'hangout', 'daily', 'etc'];
 
 export default function PlaySettingsScreen() {
@@ -98,6 +114,11 @@ export default function PlaySettingsScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  // 커버 이미지: coverImageUri 는 현재 미리보기용(로컬 file:// or https://). pickedCoverAsset 은
+  // 새로 갤러리에서 고른 자산(저장 시 S3 업로드 필요). "핀에서 선택" 시엔 이미 https:// URL 이라 asset 없이 uri 만 갱신.
+  const [coverImageUri, setCoverImageUri] = useState<string | null>(null);
+  const [pickedCoverAsset, setPickedCoverAsset] = useState<PickedImageAsset | null>(null);
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -113,6 +134,7 @@ export default function PlaySettingsScreen() {
       setRegion(p.region ?? '');
       setTags(p.tags ?? []);
       setSelectedMemberIds(p.members.map(m => m.id));
+      setCoverImageUri(p.coverImage ?? null);
 
       const crewRes = await fetchCrewById(p.crewId);
       if (canceled || !crewRes.data) return;
@@ -151,6 +173,37 @@ export default function PlaySettingsScreen() {
     setTags(tags.filter(t => t !== tagToRemove));
   };
 
+  const handleUploadCover = () => {
+    pickImage('play').then(response => {
+      if (response.didCancel || response.errorCode) {
+        if (response.errorCode === 'permission') {
+          Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
+        }
+        return;
+      }
+      const picked = response.assets?.[0];
+      if (picked?.uri) {
+        setCoverImageUri(picked.uri);
+        setPickedCoverAsset({
+          uri: picked.uri,
+          type: picked.type ?? null,
+          fileName: picked.fileName ?? null,
+        });
+      }
+    }).catch(() => Alert.alert('오류', '이미지를 선택할 수 없습니다.'));
+  };
+
+  // 핀에서 고른 이미지는 이미 S3 에 올라간 https:// URL — 재업로드 불필요, pickedCoverAsset 은 null 로.
+  const handleSelectFromPin = (url: string) => {
+    setCoverImageUri(url);
+    setPickedCoverAsset(null);
+  };
+
+  const handleRemoveCover = () => {
+    setCoverImageUri(null);
+    setPickedCoverAsset(null);
+  };
+
   // 변경된 필드만 PATCH /api/plays/{playId} 로 전송. 백엔드는 부분 업데이트를 허용.
   const handleSave = async () => {
     if (!play || saving) return;
@@ -160,6 +213,7 @@ export default function PlaySettingsScreen() {
       region: string;
       tags: string[];
       memberIds: string[];
+      coverImage: string;
     }> = {};
     if (title.trim() !== play.title) patch.title = title.trim();
     if (type !== play.type) patch.type = type;
@@ -178,12 +232,31 @@ export default function PlaySettingsScreen() {
       sortedNew.some((id, i) => id !== sortedOld[i])
     ) patch.memberIds = selectedMemberIds;
 
+    // 커버: 새로 고른 로컬 자산이면 S3 업로드 후 URL 확보. 이후 이전 값과 비교해 patch 결정.
+    setSaving(true);
+    let nextCoverUrl: string | null = coverImageUri;
+    if (pickedCoverAsset) {
+      try {
+        nextCoverUrl = await uploadPickedImage(pickedCoverAsset, 'PLAY');
+      } catch (e) {
+        setSaving(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
+    const prevCover = play.coverImage ?? null;
+    if (nextCoverUrl !== prevCover) {
+      // 백엔드 Play.updateInfo 는 blank 문자열을 null 로 정규화 → 커버 삭제 시 "" 전송.
+      patch.coverImage = nextCoverUrl ?? '';
+    }
+
     if (Object.keys(patch).length === 0) {
+      setSaving(false);
       navigation.goBack();
       return;
     }
 
-    setSaving(true);
     const res = await updatePlay(playId, patch);
     setSaving(false);
     if (!res.data) {
@@ -240,6 +313,34 @@ export default function PlaySettingsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Cover — 미리보기 + 3옵션 (업로드/핀에서 선택/삭제). 미지정 시 백엔드가 첫 핀 사진 fallback */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>커버 사진</Text>
+          <View style={styles.coverPreviewWrap}>
+            {coverImageUri ? (
+              <Image source={{ uri: coverImageUri }} style={styles.coverPreview} resizeMode="cover" />
+            ) : (
+              <View style={styles.coverPlaceholder}>
+                <CameraIcon />
+                <Text style={styles.coverPlaceholderText}>커버 없음 — 첫 핀 사진으로 자동 표시</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.coverActions}>
+            <TouchableOpacity style={styles.coverActionButton} onPress={handleUploadCover}>
+              <Text style={styles.coverActionText}>새 사진 업로드</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.coverActionButton} onPress={() => setPinPickerOpen(true)}>
+              <Text style={styles.coverActionText}>핀 사진에서 선택</Text>
+            </TouchableOpacity>
+            {coverImageUri && (
+              <TouchableOpacity style={[styles.coverActionButton, styles.coverRemoveButton]} onPress={handleRemoveCover}>
+                <Text style={[styles.coverActionText, styles.coverRemoveText]}>커버 없애기</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         {/* Title */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>플레이 제목</Text>
@@ -382,6 +483,13 @@ export default function PlaySettingsScreen() {
 
         <View style={{ height: insets.bottom + spacing['3xl'] }} />
       </ScrollView>
+
+      <PinImagePickerModal
+        visible={pinPickerOpen}
+        playId={playId}
+        onSelect={handleSelectFromPin}
+        onClose={() => setPinPickerOpen(false)}
+      />
     </View>
   );
 }
@@ -639,5 +747,55 @@ const styles = StyleSheet.create({
     color: colors.negative,
     textAlign: 'center',
     marginTop: 100,
+  },
+  coverPreviewWrap: {
+    height: 140,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  coverPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+  },
+  coverPlaceholderText: {
+    fontSize: 12,
+    color: colors.muted,
+    textAlign: 'center',
+  },
+  coverActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  coverActionButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  coverActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  coverRemoveButton: {
+    borderColor: colors.negative,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  coverRemoveText: {
+    color: colors.negative,
   },
 });
