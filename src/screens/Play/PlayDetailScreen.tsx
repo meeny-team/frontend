@@ -13,6 +13,7 @@ import {
   Image,
   Dimensions,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -161,6 +162,8 @@ export default function PlayDetailScreen() {
   const [play, setPlay] = useState<Play | null>(null);
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
   // 카테고리 필터 (null = 전체). 클라이언트 측 필터링 — 페이지네이션 도입 시 server-side 로 옮기면 됨.
   const [categoryFilter, setCategoryFilter] = useState<PinCategory | null>(null);
 
@@ -169,27 +172,39 @@ export default function PlayDetailScreen() {
     : pins.filter(p => p.category === categoryFilter);
   const visibleCategories = Array.from(new Set(pins.map(p => p.category)));
 
+  // 데이터 로드: useFocusEffect 와 pull-to-refresh 에서 공유.
+  const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
+    const playRes = await fetchPlayById(playId);
+    if (signal?.canceled || !playRes.data) return;
+    setPlay(playRes.data);
+
+    const [pinsRes, totalRes] = await Promise.all([
+      fetchPinsByPlayId(playId),
+      fetchPlayTotalAmount(playId),
+    ]);
+    if (signal?.canceled) return;
+    setPins(pinsRes.data);
+    setTotalAmount(totalRes.data);
+  }, [playId]);
+
   useFocusEffect(
     useCallback(() => {
-      let canceled = false;
-      (async () => {
-        const playRes = await fetchPlayById(playId);
-        if (canceled || !playRes.data) return;
-        setPlay(playRes.data);
-
-        const [pinsRes, totalRes] = await Promise.all([
-          fetchPinsByPlayId(playId),
-          fetchPlayTotalAmount(playId),
-        ]);
-        if (canceled) return;
-        setPins(pinsRes.data);
-        setTotalAmount(totalRes.data);
-      })();
+      const signal = { canceled: false };
+      loadAll(signal);
       return () => {
-        canceled = true;
+        signal.canceled = true;
       };
-    }, [playId]),
+    }, [loadAll]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadAll();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadAll]);
 
   const playMembers = play?.members ?? [];
   const avgAmount = playMembers.length > 0 ? Math.floor(totalAmount / playMembers.length) : 0;
@@ -227,7 +242,17 @@ export default function PlayDetailScreen() {
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
         {/* Cover Image */}
         <View style={styles.coverContainer}>
           {play.coverImage ? (

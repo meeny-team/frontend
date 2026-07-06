@@ -16,6 +16,7 @@ import {
   Alert,
   Share,
   Keyboard,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
@@ -191,6 +192,8 @@ export default function CrewDetailScreen() {
   // Profile modal state
   const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   // 소유권 양도 modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
 
@@ -198,39 +201,51 @@ export default function CrewDetailScreen() {
   const myId = user ? String(user.id) : null;
   const isOwner = !!crew && !!myId && crew.createdBy === myId;
 
+  // 데이터 로드: useFocusEffect 와 pull-to-refresh 두 곳에서 재사용.
+  const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
+    const crewRes = await fetchCrewById(crewId);
+    if (signal?.canceled) return;
+    const c = crewRes.data;
+    if (!c) return;
+    setCrew(c);
+    setInviteCode(c.inviteCode);
+    setCrewImageUri(c.coverImage ?? null);
+
+    const playsRes = await fetchPlaysByCrewId(crewId);
+    if (signal?.canceled) return;
+    const ps = playsRes.data;
+    setPlays(ps);
+
+    const totals = await Promise.all(
+      ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
+    );
+    if (signal?.canceled) return;
+    setPlayTotals(Object.fromEntries(totals));
+
+    const activitiesRes = await fetchCrewActivities(crewId, 50);
+    if (signal?.canceled) return;
+    setActivities(activitiesRes.data);
+  }, [crewId]);
+
   // 화면 포커스마다 재fetch — 다른 화면(예: CreatePlay) 갔다 돌아왔을 때 갱신
   useFocusEffect(
     useCallback(() => {
-      let canceled = false;
-      (async () => {
-        const crewRes = await fetchCrewById(crewId);
-        if (canceled) return;
-        const c = crewRes.data;
-        if (!c) return;
-        setCrew(c);
-        setInviteCode(c.inviteCode);
-        setCrewImageUri(c.coverImage ?? null);
-
-        const playsRes = await fetchPlaysByCrewId(crewId);
-        if (canceled) return;
-        const ps = playsRes.data;
-        setPlays(ps);
-
-        const totals = await Promise.all(
-          ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
-        );
-        if (canceled) return;
-        setPlayTotals(Object.fromEntries(totals));
-
-        const activitiesRes = await fetchCrewActivities(crewId, 50);
-        if (canceled) return;
-        setActivities(activitiesRes.data);
-      })();
+      const signal = { canceled: false };
+      loadAll(signal);
       return () => {
-        canceled = true;
+        signal.canceled = true;
       };
-    }, [crewId]),
+    }, [loadAll]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadAll();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadAll]);
 
   // 크루 이미지 변경: picker → S3 업로드 → PATCH /api/crews/:id 까지 한 번에. 미리보기는 업로드 전 로컬 URI 로 즉시.
   const handlePickCrewImage = useCallback(() => {
@@ -401,7 +416,17 @@ export default function CrewDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
         {/* Members */}
         <View style={styles.membersSection}>
           <Text style={styles.sectionLabel}>멤버 {crew.members.length}명</Text>
