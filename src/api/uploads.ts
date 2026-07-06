@@ -11,7 +11,7 @@
 
 import { request } from './http';
 
-export type UploadPurpose = 'PROFILE' | 'CREW' | 'PIN';
+export type UploadPurpose = 'PROFILE' | 'CREW' | 'PLAY' | 'PIN';
 
 export interface PickedImageAsset {
   uri: string;

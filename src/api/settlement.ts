@@ -31,6 +31,9 @@ interface BackendTransfer {
   toMemberId: number;
   toNickname: string;
   amount: number;
+  toBankCode: string | null;
+  toAccountNumber: string | null;
+  toAccountHolderName: string | null;
 }
 
 interface BackendPinTransfer {
@@ -42,6 +45,9 @@ interface BackendPinTransfer {
   amount: number;
   sentAt: string | null;
   receivedAt: string | null;
+  toBankCode: string | null;
+  toAccountNumber: string | null;
+  toAccountHolderName: string | null;
 }
 
 interface BackendPlaySettlement {
@@ -67,6 +73,9 @@ export interface SettlementTransfer {
   toMemberId: string;
   toNickname: string;
   amount: number;
+  toBankCode?: string;
+  toAccountNumber?: string;
+  toAccountHolderName?: string;
 }
 
 export interface PinTransfer {
@@ -78,6 +87,9 @@ export interface PinTransfer {
   amount: number;
   sentAt: string | null;
   receivedAt: string | null;
+  toBankCode?: string;
+  toAccountNumber?: string;
+  toAccountHolderName?: string;
 }
 
 export interface PlaySettlement {
@@ -107,6 +119,9 @@ function mapSettlement(b: BackendPlaySettlement): PlaySettlement {
       toMemberId: String(t.toMemberId),
       toNickname: t.toNickname,
       amount: t.amount,
+      toBankCode: t.toBankCode ?? undefined,
+      toAccountNumber: t.toAccountNumber ?? undefined,
+      toAccountHolderName: t.toAccountHolderName ?? undefined,
     })),
     pinTransfers: (b.pinTransfers ?? []).map(p => ({
       pinId: String(p.pinId),
@@ -117,6 +132,9 @@ function mapSettlement(b: BackendPlaySettlement): PlaySettlement {
       amount: p.amount,
       sentAt: p.sentAt,
       receivedAt: p.receivedAt,
+      toBankCode: p.toBankCode ?? undefined,
+      toAccountNumber: p.toAccountNumber ?? undefined,
+      toAccountHolderName: p.toAccountHolderName ?? undefined,
     })),
   };
 }
@@ -149,6 +167,22 @@ export async function closePlaySettlement(
       method: 'POST',
     });
     return { status: 200, data: mapSettlement(data), message: '정산이 마감되었습니다.' };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
+
+// 작성자 강제 마감 — 미수신 송금이 남아 있어도 마감. reason 은 감사 로그용. 권한: play.createdBy = caller.
+export async function forceClosePlaySettlement(
+  playId: string,
+  reason?: string,
+): Promise<ApiResponse<PlaySettlement | null>> {
+  try {
+    const data = await request<BackendPlaySettlement>(`/api/plays/${playId}/settlement/force-close`, {
+      method: 'POST',
+      body: { reason: reason ?? '' },
+    });
+    return { status: 200, data: mapSettlement(data), message: '정산이 강제 마감되었습니다.' };
   } catch (err) {
     return toApiResponse(err, null);
   }
@@ -205,6 +239,24 @@ export async function markPinTransferReceived(
     const data = await request<BackendPlaySettlement>(
       transferUrl(playId, pinId, fromMemberId, toMemberId, 'received'),
       { method: 'POST' },
+    );
+    return { status: 200, data: mapSettlement(data) };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
+
+// 수신자 "받았음"을 잘못 눌렀을 때 되돌림. sent 마크는 유지. 권한: to = caller. 받음 안된 상태면 409 TRANSFER_NOT_RECEIVED.
+export async function cancelPinTransferReceived(
+  playId: string,
+  pinId: string,
+  fromMemberId: string,
+  toMemberId: string,
+): Promise<ApiResponse<PlaySettlement | null>> {
+  try {
+    const data = await request<BackendPlaySettlement>(
+      transferUrl(playId, pinId, fromMemberId, toMemberId, 'received'),
+      { method: 'DELETE' },
     );
     return { status: 200, data: mapSettlement(data) };
   } catch (err) {

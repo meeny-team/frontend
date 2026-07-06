@@ -16,11 +16,12 @@ import {
   Alert,
   Share,
   Keyboard,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import Svg, { Path, Line, Circle, Polyline, Rect } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
@@ -35,11 +36,13 @@ import {
   updateCrew,
   uploadPickedImage,
   leaveCrew,
+  transferCrewOwnership,
   Crew,
   Play,
   MemberSummary,
   Activity,
 } from '../../api';
+import { useAuth } from '../../auth/Auth';
 import { activityMessage, activityEmoji, relativeTime } from '../../utils/activityMessage';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -189,53 +192,67 @@ export default function CrewDetailScreen() {
   // Profile modal state
   const [selectedUser, setSelectedUser] = useState<MemberSummary | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 소유권 양도 modal state
+  const [showTransferModal, setShowTransferModal] = useState(false);
+
+  const { user } = useAuth();
+  const myId = user ? String(user.id) : null;
+  const isOwner = !!crew && !!myId && crew.createdBy === myId;
+
+  // 데이터 로드: useFocusEffect 와 pull-to-refresh 두 곳에서 재사용.
+  const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
+    const crewRes = await fetchCrewById(crewId);
+    if (signal?.canceled) return;
+    const c = crewRes.data;
+    if (!c) return;
+    setCrew(c);
+    setInviteCode(c.inviteCode);
+    setCrewImageUri(c.coverImage ?? null);
+
+    const playsRes = await fetchPlaysByCrewId(crewId);
+    if (signal?.canceled) return;
+    const ps = playsRes.data;
+    setPlays(ps);
+
+    const totals = await Promise.all(
+      ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
+    );
+    if (signal?.canceled) return;
+    setPlayTotals(Object.fromEntries(totals));
+
+    const activitiesRes = await fetchCrewActivities(crewId, 50);
+    if (signal?.canceled) return;
+    setActivities(activitiesRes.data);
+  }, [crewId]);
+
   // 화면 포커스마다 재fetch — 다른 화면(예: CreatePlay) 갔다 돌아왔을 때 갱신
   useFocusEffect(
     useCallback(() => {
-      let canceled = false;
-      (async () => {
-        const crewRes = await fetchCrewById(crewId);
-        if (canceled) return;
-        const c = crewRes.data;
-        if (!c) return;
-        setCrew(c);
-        setInviteCode(c.inviteCode);
-        setCrewImageUri(c.coverImage ?? null);
-
-        const playsRes = await fetchPlaysByCrewId(crewId);
-        if (canceled) return;
-        const ps = playsRes.data;
-        setPlays(ps);
-
-        const totals = await Promise.all(
-          ps.map(p => fetchPlayTotalAmount(p.id).then(r => [p.id, r.data] as const)),
-        );
-        if (canceled) return;
-        setPlayTotals(Object.fromEntries(totals));
-
-        const activitiesRes = await fetchCrewActivities(crewId, 50);
-        if (canceled) return;
-        setActivities(activitiesRes.data);
-      })();
+      const signal = { canceled: false };
+      loadAll(signal);
       return () => {
-        canceled = true;
+        signal.canceled = true;
       };
-    }, [crewId]),
+    }, [loadAll]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadAll();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadAll]);
 
   // 크루 이미지 변경: picker → S3 업로드 → PATCH /api/crews/:id 까지 한 번에. 미리보기는 업로드 전 로컬 URI 로 즉시.
   const handlePickCrewImage = useCallback(() => {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
-      launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        selectionLimit: 1,
-        includeBase64: false,
-      }).then(async response => {
+      pickImage('crew').then(async response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
@@ -303,11 +320,14 @@ export default function CrewDetailScreen() {
   };
 
   // Handle share invite
+  // 딥링크 (meeny://invite/CODE) 와 6자리 코드를 함께 보내, 앱 설치자는 한 번 탭으로 가입,
+  // 미설치자는 스토어 안내 후 코드를 직접 입력할 수 있게 한다.
   const handleShareInvite = async () => {
     if (!crew) return;
+    const link = `meeny://invite/${inviteCode}`;
     try {
       await Share.share({
-        message: `${crew.name} 크루에 초대합니다!\n\n초대 코드: ${inviteCode}\n\nMeeny 앱에서 코드를 입력하세요.`,
+        message: `${crew.name} 크루에 초대합니다!\n\n초대 링크: ${link}\n초대 코드: ${inviteCode}\n\n앱이 없으면 코드를 직접 입력해서 참여하세요.`,
       });
     } catch (error) {
       console.error(error);
@@ -319,6 +339,35 @@ export default function CrewDetailScreen() {
     // In real app, use Clipboard.setString(inviteCode)
     Alert.alert('복사됨', '초대 코드가 클립보드에 복사되었습니다.');
   };
+
+  // 소유권 양도 — owner 만 호출. modal 에서 멤버 선택 → confirm alert → API.
+  const handleTransferOwnership = useCallback(
+    (targetMember: MemberSummary) => {
+      Alert.alert(
+        '소유권 양도',
+        `${targetMember.nickname}님에게 크루 소유권을 양도하시겠습니까? 양도 후엔 크루 정보 수정 권한이 사라집니다.`,
+        [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '양도',
+            style: 'destructive',
+            onPress: async () => {
+              const res = await transferCrewOwnership(crewId, targetMember.id);
+              if (!res.data) {
+                Alert.alert('양도 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+                return;
+              }
+              setCrew(res.data);
+              setShowTransferModal(false);
+              setShowSettings(false);
+              Alert.alert('양도 완료', `${targetMember.nickname}님이 새 크루 소유자입니다.`);
+            },
+          },
+        ],
+      );
+    },
+    [crewId],
+  );
 
   // 크루 나가기: 백엔드가 미정산 잔액 있으면 409 로 막음
   const handleLeaveCrew = useCallback(() => {
@@ -367,7 +416,17 @@ export default function CrewDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.brand}
+            colors={[colors.brand]}
+          />
+        }
+      >
         {/* Members */}
         <View style={styles.membersSection}>
           <Text style={styles.sectionLabel}>멤버 {crew.members.length}명</Text>
@@ -579,10 +638,62 @@ export default function CrewDetailScreen() {
             {/* Danger Zone */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>위험 구역</Text>
+              {isOwner && (
+                <TouchableOpacity
+                  style={[styles.dangerButton, styles.transferButton]}
+                  onPress={() => setShowTransferModal(true)}
+                >
+                  <Text style={styles.transferButtonText}>소유권 양도</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.dangerButton} onPress={handleLeaveCrew}>
                 <Text style={styles.dangerButtonText}>크루 나가기</Text>
               </TouchableOpacity>
             </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* 소유권 양도 모달 - 멤버 선택 (자기 자신 제외) */}
+      <Modal
+        visible={showTransferModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowTransferModal(false)}
+      >
+        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
+          <View style={styles.modalHeader}>
+            <View style={{ width: 40 }} />
+            <Text style={styles.modalTitle}>소유권 양도</Text>
+            <TouchableOpacity onPress={() => setShowTransferModal(false)} style={styles.modalCloseButton}>
+              <XIcon />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.transferGuide}>
+              양도받을 멤버를 선택하세요. 양도 후엔 크루 정보 수정 권한이 사라집니다.
+            </Text>
+            {crew.members
+              .filter(m => m.id !== myId)
+              .map(member => (
+                <TouchableOpacity
+                  key={member.id}
+                  style={styles.transferMemberRow}
+                  onPress={() => handleTransferOwnership(member)}
+                >
+                  <Avatar
+                    nickname={member.nickname}
+                    profileImage={member.profileImage}
+                    size={40}
+                    fontSize={16}
+                    backgroundColor={colors.brand}
+                  />
+                  <Text style={styles.transferMemberName}>{member.nickname}</Text>
+                </TouchableOpacity>
+              ))}
+            {crew.members.filter(m => m.id !== myId).length === 0 && (
+              <Text style={styles.transferEmpty}>양도할 다른 멤버가 없습니다.</Text>
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -934,6 +1045,41 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: colors.negative,
+  },
+  transferButton: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderColor: colors.warning,
+    marginBottom: spacing.sm,
+  },
+  transferButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.warning,
+  },
+  transferGuide: {
+    fontSize: 13,
+    color: colors.secondary,
+    padding: spacing.lg,
+    lineHeight: 18,
+  },
+  transferMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  transferMemberName: {
+    fontSize: 15,
+    color: colors.foreground,
+  },
+  transferEmpty: {
+    fontSize: 14,
+    color: colors.tertiary,
+    textAlign: 'center',
+    paddingVertical: spacing['3xl'],
   },
   // Profile modal styles
   profileContent: {

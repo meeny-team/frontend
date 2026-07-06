@@ -18,7 +18,7 @@ import {
   Modal,
   Image,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
@@ -290,14 +290,7 @@ export default function AddPinScreen() {
       Alert.alert('알림', `사진은 최대 ${MAX_PIN_IMAGES}장까지 선택할 수 있습니다.`);
       return;
     }
-    launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      selectionLimit: MAX_PIN_IMAGES - pickedAssets.length,
-      includeBase64: false,
-    }).then(response => {
+    pickImage('pin', { selectionLimit: MAX_PIN_IMAGES - pickedAssets.length }).then(response => {
       if (response.didCancel || response.errorCode) {
         if (response.errorCode === 'permission') {
           Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');

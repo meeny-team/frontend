@@ -14,6 +14,9 @@ interface BackendMemberProfile {
   email: string | null;
   profileImage: string | null;
   bio: string | null;
+  bankCode: string | null;
+  accountNumber: string | null;
+  accountHolderName: string | null;
 }
 
 function mapUser(b: BackendMemberProfile): User {
@@ -22,6 +25,9 @@ function mapUser(b: BackendMemberProfile): User {
     nickname: b.nickname,
     profileImage: b.profileImage ?? undefined,
     bio: b.bio ?? undefined,
+    bankCode: b.bankCode ?? undefined,
+    accountNumber: b.accountNumber ?? undefined,
+    accountHolderName: b.accountHolderName ?? undefined,
   };
 }
 

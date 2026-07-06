@@ -145,3 +145,55 @@ export async function deletePin(pinId: string): Promise<ApiResponse<boolean>> {
     return toApiResponse(err, false);
   }
 }
+
+export interface PinSearchFilter {
+  category?: PinCategory;
+  authorId?: string;
+  keyword?: string;
+}
+
+export interface PageResult<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+}
+
+interface BackendPage<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+}
+
+// 핀 검색 + 페이지네이션. category/authorId/keyword 는 옵셔널 (백엔드는 null 인 필터 무시).
+// 클라이언트 PinCategory(lowercase) → 백엔드 enum(uppercase) 변환.
+export async function searchPins(
+  playId: string,
+  filter: PinSearchFilter,
+  page = 0,
+  size = 20,
+): Promise<ApiResponse<PageResult<Pin> | null>> {
+  const params = new URLSearchParams();
+  params.append('page', String(page));
+  params.append('size', String(size));
+  if (filter.category) params.append('category', filter.category.toUpperCase());
+  if (filter.authorId) params.append('authorId', filter.authorId);
+  if (filter.keyword && filter.keyword.trim()) params.append('keyword', filter.keyword.trim());
+  try {
+    const data = await request<BackendPage<BackendPinResponse>>(
+      `/api/plays/${playId}/pins/search?${params.toString()}`,
+      { method: 'GET' },
+    );
+    return {
+      status: 200,
+      data: { ...data, content: data.content.map(mapPin) },
+    };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}
