@@ -14,10 +14,11 @@ import {
   Animated,
   Dimensions,
   Alert,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import Svg, { Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
@@ -26,8 +27,11 @@ import {
   PlayType,
   fetchCrewById,
   createPlay,
+  uploadPickedImage,
+  PickedImageAsset,
   Crew,
 } from '../../api';
+import { pickImage } from '../../utils/imagePicker';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
@@ -77,6 +81,17 @@ function CheckIcon({ color = colors.foreground, size = 16 }: { color?: string; s
   );
 }
 
+function CameraIcon({ size = 22, color = colors.muted }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.5}>
+      <Circle cx="12" cy="13" r="4" />
+      <Line x1="12" y1="5" x2="12" y2="3" />
+      <Line x1="5" y1="8" x2="5" y2="8.01" />
+      <Line x1="19" y1="8" x2="19" y2="8.01" />
+    </Svg>
+  );
+}
+
 const PLAY_TYPES: PlayType[] = ['travel', 'date', 'hangout', 'daily'];
 
 export default function CreatePlayScreen() {
@@ -102,6 +117,9 @@ export default function CreatePlayScreen() {
   const [endPickerVisible, setEndPickerVisible] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [locationName, setLocationName] = useState('');
+  // 커버 이미지: 사용자가 선택하지 않으면 백엔드가 첫 핀 사진을 자동 fallback 으로 사용한다.
+  const [coverAsset, setCoverAsset] = useState<PickedImageAsset | null>(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let canceled = false;
@@ -180,7 +198,41 @@ export default function CreatePlayScreen() {
     }
   };
 
+  const handlePickCover = () => {
+    pickImage('play').then(response => {
+      if (response.didCancel || response.errorCode) {
+        if (response.errorCode === 'permission') {
+          Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
+        }
+        return;
+      }
+      const picked = response.assets?.[0];
+      if (picked?.uri) {
+        setCoverAsset({
+          uri: picked.uri,
+          type: picked.type ?? null,
+          fileName: picked.fileName ?? null,
+        });
+      }
+    }).catch(() => Alert.alert('오류', '이미지를 선택할 수 없습니다.'));
+  };
+
   const handleCreate = async () => {
+    if (creating) return;
+    setCreating(true);
+
+    let coverImageUrl: string | undefined;
+    if (coverAsset) {
+      try {
+        coverImageUrl = await uploadPickedImage(coverAsset, 'PLAY');
+      } catch (e) {
+        setCreating(false);
+        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
+        Alert.alert('업로드 실패', msg);
+        return;
+      }
+    }
+
     try {
       await createPlay({
         crewId,
@@ -193,10 +245,13 @@ export default function CreatePlayScreen() {
         region: locationName || undefined,
         memberIds: selectedMemberIds,
         tags: customType ? [customType] : undefined,
+        coverImage: coverImageUrl,
       });
       navigation.goBack();
     } catch {
       Alert.alert('오류', '플레이 생성에 실패했습니다.');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -247,7 +302,24 @@ export default function CreatePlayScreen() {
 
   const renderStep1 = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.inputLabel}>플레이 제목</Text>
+      {/* 커버 사진 (선택) — 미지정 시 백엔드가 첫 핀 사진으로 자동 fallback */}
+      <Text style={styles.inputLabel}>커버 사진 (선택)</Text>
+      <TouchableOpacity
+        style={styles.coverPicker}
+        onPress={handlePickCover}
+        activeOpacity={0.7}
+      >
+        {coverAsset ? (
+          <Image source={{ uri: coverAsset.uri }} style={styles.coverPreview} resizeMode="cover" />
+        ) : (
+          <View style={styles.coverPlaceholder}>
+            <CameraIcon />
+            <Text style={styles.coverPlaceholderText}>사진 선택</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      <Text style={[styles.inputLabel, { marginTop: spacing.xl }]}>플레이 제목</Text>
       <TextInput
         style={styles.titleInput}
         placeholder="예: 제주도 2박3일"
@@ -255,7 +327,6 @@ export default function CreatePlayScreen() {
         value={title}
         onChangeText={setTitle}
         maxLength={30}
-        autoFocus
       />
       <Text style={styles.charCount}>{title.length}/30</Text>
 
@@ -451,12 +522,14 @@ export default function CreatePlayScreen() {
       {/* Bottom Button */}
       <View style={[styles.bottomSection, { paddingBottom: insets.bottom + spacing.md }]}>
         <TouchableOpacity
-          style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
+          style={[styles.nextButton, (!canProceed() || creating) && styles.nextButtonDisabled]}
           onPress={step === TOTAL_STEPS ? handleCreate : handleNext}
-          disabled={!canProceed()}
+          disabled={!canProceed() || creating}
         >
           <Text style={styles.nextButtonText}>
-            {step === TOTAL_STEPS ? '플레이 만들기' : '다음'}
+            {step === TOTAL_STEPS
+              ? (creating ? '만드는 중...' : '플레이 만들기')
+              : '다음'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -540,6 +613,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: spacing.md,
+  },
+
+  // Step 1: Cover
+  coverPicker: {
+    height: 120,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  coverPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  coverPlaceholderText: {
+    fontSize: 13,
+    color: colors.muted,
   },
 
   // Step 1: Title & Type
