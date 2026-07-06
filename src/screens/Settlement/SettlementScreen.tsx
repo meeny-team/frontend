@@ -12,21 +12,25 @@ import {
   Text,
   Alert,
   RefreshControl,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import Svg, { Polyline, Path, Circle, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
+import { bankName } from '../../data/banks';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
   fetchPlayTotalAmount,
   fetchPlaySettlement,
   closePlaySettlement,
+  forceClosePlaySettlement,
   markPinTransferSent,
   markPinTransferReceived,
   cancelPinTransferSent,
+  cancelPinTransferReceived,
   formatCurrency,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
@@ -109,6 +113,18 @@ function SendIcon() {
   );
 }
 
+function ShareIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={colors.foreground} strokeWidth={2}>
+      <Circle cx="18" cy="5" r="3" />
+      <Circle cx="6" cy="12" r="3" />
+      <Circle cx="18" cy="19" r="3" />
+      <Line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <Line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </Svg>
+  );
+}
+
 type TabType = 'all' | 'pending' | 'completed';
 
 export default function SettlementScreen() {
@@ -165,6 +181,36 @@ export default function SettlementScreen() {
     }
   }, [loadAll]);
 
+  // 정산 마감 흐름:
+  // 1) closePlaySettlement 시도. 성공이면 종료
+  // 2) PLAY_NOT_SETTLEABLE 실패 시, 작성자에게만 "강제 마감하시겠습니까?" 추가 alert 제안 (데드락 해소)
+  const isPlayAuthor = !!play && !!myId && play.createdBy === myId;
+
+  const promptForceClose = useCallback(() => {
+    Alert.alert(
+      '강제 마감',
+      '수신자가 아직 "받음" 표시를 누르지 않은 송금이 남아 있어요. 작성자 권한으로 강제 마감하시겠습니까? 강제 마감 이력은 활동 로그에 기록됩니다.',
+      [
+        { text: '아니오', style: 'cancel' },
+        {
+          text: '강제 마감',
+          style: 'destructive',
+          onPress: async () => {
+            setClosing(true);
+            const res = await forceClosePlaySettlement(playId);
+            setClosing(false);
+            if (!res.data) {
+              Alert.alert('강제 마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
+            Alert.alert('정산 마감 완료', '정산이 강제 마감되었습니다.');
+          },
+        },
+      ],
+    );
+  }, [playId]);
+
   // 정산 마감: 백엔드가 모든 송금이 received 마킹됐는지 검증. 아니면 PLAY_NOT_SETTLEABLE 메시지 노출.
   const handleClose = () => {
     Alert.alert(
@@ -181,7 +227,12 @@ export default function SettlementScreen() {
             const res = await closePlaySettlement(playId);
             setClosing(false);
             if (!res.data) {
-              Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              // PLAY_NOT_SETTLEABLE 은 작성자에게만 강제 마감 옵션 제안. 나머지는 일반 실패 표시.
+              if (isPlayAuthor && (res.message ?? '').includes('받음 처리')) {
+                promptForceClose();
+              } else {
+                Alert.alert('마감 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              }
               return;
             }
             setSettlement(res.data);
@@ -309,12 +360,39 @@ export default function SettlementScreen() {
     );
   };
 
+  // 송금 안내 공유: 시스템 공유 시트로 상대 계좌 정보 + 금액을 텍스트로 내보낸다.
+  // 시트 안에 "복사" 옵션이 iOS/Android 기본 제공되므로 별도 클립보드 라이브러리 없이 복사도 커버.
+  const handleShareTransfer = async (pinId: string, fromUserId: string, toUserId: string, amount: number) => {
+    const toUser = getUserById(toUserId);
+    const mark = pinTransferMap.get(`${pinId}:${fromUserId}:${toUserId}`);
+    const nickname = toUser?.nickname ?? '상대';
+    const amountStr = formatCurrency(amount);
+
+    const bankLabel = bankName(mark?.toBankCode);
+    const accountNumber = mark?.toAccountNumber;
+    const holder = mark?.toAccountHolderName;
+
+    let message: string;
+    if (bankLabel && accountNumber) {
+      const holderLine = holder ? `\n예금주: ${holder}` : '';
+      message = `${nickname}님께 ${amountStr} 송금\n${bankLabel} ${accountNumber}${holderLine}\n\n- meeny`;
+    } else {
+      // 계좌 미등록: 금액만 안내하고 상대에게 계좌 확인을 요청
+      message = `${nickname}님께 ${amountStr} 정산 요청드려요.\n계좌 정보가 아직 등록되지 않아 상대에게 확인이 필요해요.\n\n- meeny`;
+    }
+    try {
+      await Share.share({ message });
+    } catch {
+      // 사용자가 취소한 경우 등 — 조용히 무시
+    }
+  };
+
   // 받기 확인 (수신자=paidBy): POST .../received → 응답으로 갱신
   const handleConfirmReceive = (pinId: string, fromUserId: string, toUserId: string, amount: number) => {
     const fromUser = getUserById(fromUserId);
     Alert.alert(
       '정산 확인',
-      `${fromUser?.nickname}님에게 ${formatCurrency(amount)}을 받으셨나요?\n\n⚠️ 확인 후에는 되돌릴 수 없습니다.`,
+      `${fromUser?.nickname}님에게 ${formatCurrency(amount)}을 받으셨나요?`,
       [
         { text: '아니오', style: 'cancel' },
         {
@@ -324,6 +402,29 @@ export default function SettlementScreen() {
             const res = await markPinTransferReceived(playId, pinId, fromUserId, toUserId);
             if (!res.data) {
               Alert.alert('확인 실패', res.message ?? '잠시 후 다시 시도해주세요.');
+              return;
+            }
+            setSettlement(res.data);
+          },
+        },
+      ]
+    );
+  };
+
+  // 받기 취소 (수신자가 잘못 눌렀을 때): DELETE .../received → 응답으로 갱신. sent 마크는 유지.
+  const handleCancelReceive = (pinId: string, fromUserId: string, toUserId: string) => {
+    Alert.alert(
+      '받음 취소',
+      '잘못 눌렀을 때 되돌릴 수 있어요. 받음 표시를 취소하시겠습니까?',
+      [
+        { text: '아니오', style: 'cancel' },
+        {
+          text: '취소',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await cancelPinTransferReceived(playId, pinId, fromUserId, toUserId);
+            if (!res.data) {
+              Alert.alert('취소 실패', res.message ?? '잠시 후 다시 시도해주세요.');
               return;
             }
             setSettlement(res.data);
@@ -584,6 +685,17 @@ export default function SettlementScreen() {
 
                             {/* Status & Actions */}
                             <View style={styles.settlementActions}>
+                              {/* 송금자 관점 공유 버튼: 상대 계좌를 시스템 공유 시트로 내보내 카톡/문자/복사 로 이어짐 */}
+                              {isFromMe && state.status !== 'completed' && (
+                                <TouchableOpacity
+                                  style={styles.shareButton}
+                                  onPress={() => handleShareTransfer(settlement.pinId, settlement.from, settlement.to, settlement.amount)}
+                                >
+                                  <ShareIcon />
+                                  <Text style={styles.shareButtonText}>공유</Text>
+                                </TouchableOpacity>
+                              )}
+
                               {state.status === 'pending' && (
                                 <>
                                   {isFromMe ? (
@@ -629,10 +741,21 @@ export default function SettlementScreen() {
                               )}
 
                               {state.status === 'completed' && (
-                                <View style={[styles.statusBadge, styles.statusBadgeCompleted]}>
-                                  <CheckIcon color={colors.positive} />
-                                  <Text style={[styles.statusBadgeText, styles.statusBadgeTextCompleted]}>완료</Text>
-                                </View>
+                                <>
+                                  <View style={[styles.statusBadge, styles.statusBadgeCompleted]}>
+                                    <CheckIcon color={colors.positive} />
+                                    <Text style={[styles.statusBadgeText, styles.statusBadgeTextCompleted]}>완료</Text>
+                                  </View>
+                                  {/* 정산 마감 전, 수신자 본인은 받음 취소 가능 (sent 마크는 유지). */}
+                                  {isToMe && !settledAt && (
+                                    <TouchableOpacity
+                                      style={styles.cancelButton}
+                                      onPress={() => handleCancelReceive(settlement.pinId, settlement.from, settlement.to)}
+                                    >
+                                      <Text style={styles.cancelButtonText}>받음 취소</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </>
                               )}
                             </View>
                           </View>
@@ -996,6 +1119,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   sendButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  shareButtonText: {
     fontSize: 13,
     fontWeight: '600',
     color: colors.foreground,

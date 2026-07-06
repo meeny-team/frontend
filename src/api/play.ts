@@ -162,3 +162,53 @@ export async function fetchPlayTotalAmount(playId: string): Promise<ApiResponse<
     return toApiResponse(err, 0);
   }
 }
+
+export interface PlaySearchFilter {
+  type?: PlayType;
+  keyword?: string;
+}
+
+export interface PagePlayResult {
+  content: Play[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+}
+
+interface BackendPagePlay {
+  content: BackendPlayResponse[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+}
+
+// 플레이 검색 + 페이지네이션. type/keyword 옵셔널.
+// 클라이언트 PlayType(lowercase) → 백엔드 enum(uppercase) 변환.
+export async function searchPlays(
+  crewId: string,
+  filter: PlaySearchFilter,
+  page = 0,
+  size = 20,
+): Promise<ApiResponse<PagePlayResult | null>> {
+  const params = new URLSearchParams();
+  params.append('page', String(page));
+  params.append('size', String(size));
+  if (filter.type) params.append('type', filter.type.toUpperCase());
+  if (filter.keyword && filter.keyword.trim()) params.append('keyword', filter.keyword.trim());
+  try {
+    const data = await request<BackendPagePlay>(
+      `/api/crews/${crewId}/plays/search?${params.toString()}`,
+      { method: 'GET' },
+    );
+    return {
+      status: 200,
+      data: { ...data, content: data.content.map(mapPlay) },
+    };
+  } catch (err) {
+    return toApiResponse(err, null);
+  }
+}

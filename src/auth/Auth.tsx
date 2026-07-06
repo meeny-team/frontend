@@ -30,6 +30,7 @@ import {
   saveTokens,
   clearSession,
   getRefreshToken,
+  isGuestSession,
   setOnSessionExpired,
 } from './session';
 
@@ -37,6 +38,8 @@ interface AuthContextType {
   user: MemberProfile | User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  // "둘러보기" 로 로그인했는지 — 공유 데모 계정. 회원탈퇴/일부 기능에서 분기에 사용.
+  isGuest: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithKakao: () => Promise<void>;
   loginWithApple: () => Promise<void>;
@@ -51,10 +54,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<MemberProfile | User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
 
   // 시작 시 한 번: 저장된 토큰 복원 + 자동 로그인 + 세션 만료 알림 콜백 등록
   useEffect(() => {
-    setOnSessionExpired(() => setUser(null));
+    setOnSessionExpired(() => {
+      setUser(null);
+      setIsGuest(false);
+    });
 
     (async () => {
       const stored = await loadFromStorage();
@@ -62,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await fetchMe();
           setUser(me);
+          setIsGuest(isGuestSession());
         } catch {
           // 토큰이 만료되었고 자동 refresh 까지 실패한 경우. session 은 이미 비워져 있음.
         }
@@ -74,8 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 로그인 직후 공통 후처리: 토큰 영속화 → 사용자 프로필 호출
   // (saveTokens 가 먼저여야 fetchMe 가 자동으로 새 토큰을 첨부할 수 있다)
-  const completeLogin = async (issued: TokenResponse) => {
-    await saveTokens(issued);
+  const completeLogin = async (issued: TokenResponse, asGuest = false) => {
+    await saveTokens(issued, asGuest);
+    setIsGuest(asGuest);
     const me = await fetchMe();
     setUser(me);
   };
@@ -163,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // "둘러보기": 백엔드 공유 데모 계정으로 자동 로그인. 실제 토큰을 받아오므로 이후 모든 API 호출이 정상 동작.
     try {
       const issued = await guestLogin();
-      await completeLogin(issued);
+      await completeLogin(issued, true);
     } catch (err) {
       if (err instanceof AuthApiError) {
         console.warn('[auth] guest login backend rejected:', err.code, err.message);
@@ -197,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await clearSession();
     setUser(null);
+    setIsGuest(false);
   };
 
   return (
@@ -205,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
+        isGuest,
         loginWithGoogle,
         loginWithKakao,
         loginWithApple,

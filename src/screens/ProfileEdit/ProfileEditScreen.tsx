@@ -17,12 +17,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../../utils/imagePicker';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { useAuth } from '../../auth/Auth';
 import { getAccessToken } from '../../auth/session';
 import { updateCurrentUser, uploadPickedImage, PickedImageAsset } from '../../api';
+import { bankName } from '../../data/banks';
+import { BankPickerModal } from './BankPickerModal';
 
 // ============ Icons ============
 
@@ -67,10 +69,18 @@ export default function ProfileEditScreen() {
   const initialNickname = user?.nickname ?? '';
   const initialBio = user?.bio ?? '';
   const initialImage = user?.profileImage ?? null;
+  // user 는 MemberProfile(null) | User(undefined) 두 형태가 섞여 있어 nullish coalescing 으로 정규화.
+  const initialBankCode = user?.bankCode ?? '';
+  const initialAccountNumber = user?.accountNumber ?? '';
+  const initialAccountHolderName = user?.accountHolderName ?? '';
 
   const [nickname, setNickname] = useState(initialNickname);
   const [bio, setBio] = useState(initialBio);
   const [imageUri, setImageUri] = useState<string | null>(initialImage);
+  const [bankCode, setBankCode] = useState(initialBankCode);
+  const [accountNumber, setAccountNumber] = useState(initialAccountNumber);
+  const [accountHolderName, setAccountHolderName] = useState(initialAccountHolderName);
+  const [bankPickerOpen, setBankPickerOpen] = useState(false);
   // picker 로 새로 고른 자산. 저장 시 S3 업로드 대상이며, 기존 https:// URL 만 있을 때는 null.
   const [pickedAsset, setPickedAsset] = useState<PickedImageAsset | null>(null);
   const [saving, setSaving] = useState(false);
@@ -79,14 +89,7 @@ export default function ProfileEditScreen() {
     Keyboard.dismiss();
 
     requestAnimationFrame(() => {
-      launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        selectionLimit: 1,
-        includeBase64: false,
-      }).then(response => {
+      pickImage('profile').then(response => {
         if (response.didCancel || response.errorCode) {
           if (response.errorCode === 'permission') {
             Alert.alert('권한 필요', '설정에서 사진 접근 권한을 허용해주세요.');
@@ -135,10 +138,21 @@ export default function ProfileEditScreen() {
       }
     }
 
-    const patch: { nickname?: string; bio?: string; profileImage?: string } = {};
+    const patch: {
+      nickname?: string;
+      bio?: string;
+      profileImage?: string;
+      bankCode?: string;
+      accountNumber?: string;
+      accountHolderName?: string;
+    } = {};
     if (nickname !== initialNickname) patch.nickname = nickname.trim();
     if (bio !== initialBio) patch.bio = bio;
     if (uploadedUrl) patch.profileImage = uploadedUrl;
+    // 계좌 정보: 빈 문자열이면 서버에서 등록 해제로 정규화된다. 변경 없으면 아예 안 보냄.
+    if (bankCode !== initialBankCode) patch.bankCode = bankCode;
+    if (accountNumber !== initialAccountNumber) patch.accountNumber = accountNumber;
+    if (accountHolderName !== initialAccountHolderName) patch.accountHolderName = accountHolderName;
 
     const res = await updateCurrentUser(patch);
     setSaving(false);
@@ -153,13 +167,19 @@ export default function ProfileEditScreen() {
       email: null,
       profileImage: res.data.profileImage ?? null,
       bio: res.data.bio ?? null,
+      bankCode: res.data.bankCode ?? null,
+      accountNumber: res.data.accountNumber ?? null,
+      accountHolderName: res.data.accountHolderName ?? null,
     });
     navigation.goBack();
   };
 
   const hasChanges = nickname !== initialNickname ||
     bio !== initialBio ||
-    imageUri !== initialImage;
+    imageUri !== initialImage ||
+    bankCode !== initialBankCode ||
+    accountNumber !== initialAccountNumber ||
+    accountHolderName !== initialAccountHolderName;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -233,7 +253,48 @@ export default function ProfileEditScreen() {
           />
           <Text style={styles.charCount}>{bio.length}/100</Text>
         </View>
+
+        {/* 정산 계좌 — 크루 멤버에게만 노출된다. 정산 결과에서 상대가 계좌를 복사/공유할 때 사용 */}
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>정산 계좌</Text>
+          <Text style={styles.helperText}>
+            같은 크루 멤버가 정산 시 계좌를 복사·공유할 수 있어요. 등록은 선택사항입니다.
+          </Text>
+          <TouchableOpacity
+            style={styles.bankPickerButton}
+            onPress={() => setBankPickerOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.bankPickerText, !bankCode && styles.bankPickerPlaceholder]}>
+              {bankName(bankCode) ?? '은행 선택'}
+            </Text>
+          </TouchableOpacity>
+          <TextInput
+            style={[styles.textInput, styles.accountInput]}
+            value={accountNumber}
+            onChangeText={text => setAccountNumber(text.replace(/[^0-9-]/g, ''))}
+            placeholder="계좌번호 (숫자만)"
+            placeholderTextColor={colors.muted}
+            keyboardType="number-pad"
+            maxLength={30}
+          />
+          <TextInput
+            style={[styles.textInput, styles.accountInput]}
+            value={accountHolderName}
+            onChangeText={setAccountHolderName}
+            placeholder="예금주"
+            placeholderTextColor={colors.muted}
+            maxLength={50}
+          />
+        </View>
       </ScrollView>
+
+      <BankPickerModal
+        visible={bankPickerOpen}
+        selectedCode={bankCode || undefined}
+        onSelect={setBankCode}
+        onClose={() => setBankPickerOpen(false)}
+      />
     </View>
   );
 }
@@ -333,6 +394,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     textAlign: 'right',
+    marginTop: spacing.sm,
+  },
+  helperText: {
+    fontSize: 12,
+    color: colors.tertiary,
+    marginBottom: spacing.md,
+  },
+  bankPickerButton: {
+    fontSize: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  bankPickerText: {
+    fontSize: 16,
+    color: colors.foreground,
+  },
+  bankPickerPlaceholder: {
+    color: colors.muted,
+  },
+  accountInput: {
     marginTop: spacing.sm,
   },
 });

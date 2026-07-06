@@ -61,6 +61,9 @@ export interface MemberProfile {
   email: string | null;
   profileImage: string | null;
   bio: string | null;
+  bankCode: string | null;
+  accountNumber: string | null;
+  accountHolderName: string | null;
 }
 
 export async function fetchMe(): Promise<MemberProfile> {

@@ -4,7 +4,7 @@
  * 성능 최적화: 컴포넌트 분리 + 메모이제이션
  */
 
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useCallback, useEffect, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,9 +16,10 @@ import {
   Dimensions,
   ImageBackground,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Line, Circle, Polyline } from 'react-native-svg';
 import { colors, spacing } from '../../design';
@@ -88,13 +89,17 @@ const JoinModal = memo(({ visible, onClose, onJoinSuccess }: JoinModalProps) => 
     setIsJoining(true);
     try {
       const response = await joinCrewByCode(code.trim());
-      if (response.status === 200) {
+      if (response.status === 200 && response.data) {
         setCode('');
         onClose();
         onJoinSuccess();
+        return;
       }
+      // 실패: 백엔드 메시지(INVALID_INVITE_CODE / ALREADY_JOINED_CREW 등)를 그대로 노출
+      Alert.alert('참여 실패', response.message ?? '잘못된 초대 코드입니다.');
     } catch (error) {
       console.error('Failed to join crew:', error);
+      Alert.alert('참여 실패', '네트워크 오류로 참여하지 못했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsJoining(false);
     }
@@ -262,6 +267,7 @@ const SmallCrewCard = memo(({ crew, playCount, onPress }: SmallCrewCardProps) =>
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProp<AuthorizedStackParamList, 'Home'>>();
   const { user } = useAuth();
 
   const [showAddOptions, setShowAddOptions] = useState(false);
@@ -312,6 +318,23 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [loadCrews]);
+
+  // 딥링크 (meeny://invite/{code}) 진입 시 자동 join 시도. 한 번 처리 후 params 클리어.
+  useEffect(() => {
+    const inviteCode = route.params?.inviteCode;
+    if (!inviteCode) return;
+    navigation.setParams({ inviteCode: undefined });
+    (async () => {
+      const response = await joinCrewByCode(inviteCode);
+      if (response.status === 200 && response.data) {
+        await loadCrews();
+        Alert.alert('크루 참여 완료', `${response.data.name} 크루에 참여했습니다.`);
+      } else {
+        Alert.alert('참여 실패', response.message ?? '잘못된 초대 코드입니다.');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- params 변화로만 트리거
+  }, [route.params?.inviteCode]);
 
   const heroCrew = myCrews[0];
   const otherCrews = myCrews.slice(1);

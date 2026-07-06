@@ -30,6 +30,7 @@ import {
   PLAY_TYPE_LABELS,
   CATEGORY_LABELS,
   CATEGORY_COLORS,
+  PinCategory,
   Pin,
   Play,
   MemberSummary,
@@ -162,6 +163,14 @@ export default function PlayDetailScreen() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+
+  // 카테고리 필터 (null = 전체). 클라이언트 측 필터링 — 페이지네이션 도입 시 server-side 로 옮기면 됨.
+  const [categoryFilter, setCategoryFilter] = useState<PinCategory | null>(null);
+
+  const filteredPins = categoryFilter == null
+    ? pins
+    : pins.filter(p => p.category === categoryFilter);
+  const visibleCategories = Array.from(new Set(pins.map(p => p.category)));
 
   // 데이터 로드: useFocusEffect 와 pull-to-refresh 에서 공유.
   const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
@@ -336,7 +345,36 @@ export default function PlayDetailScreen() {
               </View>
             )}
           </View>
-          {pins.map(pin => {
+          {/* 카테고리 chip 필터 — 등장한 카테고리만 노출 */}
+          {visibleCategories.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryFilterRow}
+              contentContainerStyle={styles.categoryFilterContent}
+            >
+              <TouchableOpacity
+                style={[styles.categoryChip, categoryFilter == null && styles.categoryChipActive]}
+                onPress={() => setCategoryFilter(null)}
+              >
+                <Text style={[styles.categoryChipText, categoryFilter == null && styles.categoryChipTextActive]}>
+                  전체
+                </Text>
+              </TouchableOpacity>
+              {visibleCategories.map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.categoryChip, categoryFilter === cat && styles.categoryChipActive]}
+                  onPress={() => setCategoryFilter(cat)}
+                >
+                  <Text style={[styles.categoryChipText, categoryFilter === cat && styles.categoryChipTextActive]}>
+                    {CATEGORY_LABELS[cat]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          {filteredPins.map(pin => {
             const author = memberMap.get(pin.authorId);
             return (
               <PinCard
@@ -348,10 +386,12 @@ export default function PlayDetailScreen() {
               />
             );
           })}
-          {pins.length === 0 && (
+          {filteredPins.length === 0 && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyEmoji}>📍</Text>
-              <Text style={styles.emptyText}>아직 핀이 없어요</Text>
+              <Text style={styles.emptyText}>
+                {pins.length === 0 ? '아직 핀이 없어요' : '해당 카테고리에 핀이 없어요'}
+              </Text>
             </View>
           )}
         </View>
@@ -671,6 +711,34 @@ const styles = StyleSheet.create({
   pinLocation: {
     fontSize: 12,
     color: colors.tertiary,
+  },
+  categoryFilterRow: {
+    marginBottom: spacing.md,
+  },
+  categoryFilterContent: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
+  },
+  categoryChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.xs,
+  },
+  categoryChipActive: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.secondary,
+  },
+  categoryChipTextActive: {
+    color: colors.foreground,
   },
   emptyState: {
     padding: spacing['3xl'],
