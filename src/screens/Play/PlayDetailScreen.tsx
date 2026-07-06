@@ -21,10 +21,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Svg, { Path, Circle, Polyline, Line } from 'react-native-svg';
 import { colors, spacing, radius } from '../../design';
 import { Avatar } from '../../components/Avatar';
+import { CategoryStatsCard } from '../../components/CategoryStatsCard';
 import {
   fetchPlayById,
   fetchPinsByPlayId,
   fetchPlayTotalAmount,
+  fetchPlayStats,
   formatCurrency,
   formatDateRange,
   PLAY_TYPE_LABELS,
@@ -34,6 +36,7 @@ import {
   Pin,
   Play,
   MemberSummary,
+  CategoryStats,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
@@ -163,6 +166,7 @@ export default function PlayDetailScreen() {
   const [pins, setPins] = useState<Pin[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<CategoryStats | null>(null);
 
   // 카테고리 필터 (null = 전체). 클라이언트 측 필터링 — 페이지네이션 도입 시 server-side 로 옮기면 됨.
   const [categoryFilter, setCategoryFilter] = useState<PinCategory | null>(null);
@@ -172,19 +176,21 @@ export default function PlayDetailScreen() {
     : pins.filter(p => p.category === categoryFilter);
   const visibleCategories = Array.from(new Set(pins.map(p => p.category)));
 
-  // 데이터 로드: useFocusEffect 와 pull-to-refresh 에서 공유.
+  // 데이터 로드: useFocusEffect 와 pull-to-refresh 에서 공유. 카테고리 통계도 함께 로드.
   const loadAll = useCallback(async (signal?: { canceled: boolean }) => {
     const playRes = await fetchPlayById(playId);
     if (signal?.canceled || !playRes.data) return;
     setPlay(playRes.data);
 
-    const [pinsRes, totalRes] = await Promise.all([
+    const [pinsRes, totalRes, statsRes] = await Promise.all([
       fetchPinsByPlayId(playId),
       fetchPlayTotalAmount(playId),
+      fetchPlayStats(playId),
     ]);
     if (signal?.canceled) return;
     setPins(pinsRes.data);
     setTotalAmount(totalRes.data);
+    setStats(statsRes.data ?? null);
   }, [playId]);
 
   useFocusEffect(
@@ -323,6 +329,9 @@ export default function PlayDetailScreen() {
             <Text style={styles.statValue}>{formatCurrency(avgAmount)}</Text>
           </View>
         </View>
+
+        {/* Category Stats */}
+        {stats && <CategoryStatsCard stats={stats} />}
 
         {/* Pins Timeline */}
         <View style={styles.pinsSection}>
