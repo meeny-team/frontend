@@ -342,6 +342,9 @@ export default function AddPinScreen() {
         title: title.trim(),
         memo: memo.trim() || undefined,
         location: locationName.trim() || undefined,
+        // 카카오 place 를 고른 경우에만 좌표를 함께 보낸다. 텍스트로만 입력한 위치는 지도 마커에서 제외.
+        latitude: selectedPlace?.latitude,
+        longitude: selectedPlace?.longitude,
         images: imageUrls,
         settlement: {
           type: settlementType,

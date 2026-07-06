@@ -143,6 +143,9 @@ export interface Pin {
   title: string;
   memo?: string;
   location?: string;
+  // 지도 마커용 좌표. 카카오 place 검색으로 고른 핀만 채워지며, 위/경도는 항상 쌍으로만 저장된다.
+  latitude?: number;
+  longitude?: number;
   images?: string[];
   settlement: Settlement;
   createdAt: string;
@@ -155,6 +158,8 @@ export interface CreatePinRequest {
   title: string;
   memo?: string;
   location?: string;
+  latitude?: number;
+  longitude?: number;
   images?: string[];
   settlement: Settlement;
 }
