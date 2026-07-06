@@ -40,6 +40,7 @@ import {
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
+import { PlayPinMap } from './PlayPinMap';
 
 type NavigationProp = NativeStackNavigationProp<AuthorizedStackParamList>;
 type RouteProps = RouteProp<AuthorizedStackParamList, 'PlayDetail'>;
@@ -170,6 +171,8 @@ export default function PlayDetailScreen() {
 
   // 카테고리 필터 (null = 전체). 클라이언트 측 필터링 — 페이지네이션 도입 시 server-side 로 옮기면 됨.
   const [categoryFilter, setCategoryFilter] = useState<PinCategory | null>(null);
+  // 핀 표시 모드: 타임라인(기존) vs 지도(카테고리 색 마커).
+  const [viewMode, setViewMode] = useState<'timeline' | 'map'>('timeline');
 
   const filteredPins = categoryFilter == null
     ? pins
@@ -333,10 +336,10 @@ export default function PlayDetailScreen() {
         {/* Category Stats */}
         {stats && <CategoryStatsCard stats={stats} />}
 
-        {/* Pins Timeline */}
+        {/* Pins */}
         <View style={styles.pinsSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>핀 타임라인</Text>
+            <Text style={styles.sectionTitle}>{viewMode === 'map' ? '핀 지도' : '핀 타임라인'}</Text>
             {isMember && (
               <View style={styles.sectionActions}>
                 <TouchableOpacity
@@ -354,6 +357,30 @@ export default function PlayDetailScreen() {
               </View>
             )}
           </View>
+
+          {/* 뷰 모드 토글: 타임라인 / 지도 */}
+          <View style={styles.viewModeTabs}>
+            <TouchableOpacity
+              style={[styles.viewModeTab, viewMode === 'timeline' && styles.viewModeTabActive]}
+              onPress={() => setViewMode('timeline')}
+            >
+              <Text style={[styles.viewModeText, viewMode === 'timeline' && styles.viewModeTextActive]}>타임라인</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.viewModeTab, viewMode === 'map' && styles.viewModeTabActive]}
+              onPress={() => setViewMode('map')}
+            >
+              <Text style={[styles.viewModeText, viewMode === 'map' && styles.viewModeTextActive]}>지도</Text>
+            </TouchableOpacity>
+          </View>
+
+          {viewMode === 'map' ? (
+            <PlayPinMap
+              pins={filteredPins}
+              onPressPin={(pinId) => navigation.navigate('PinDetail', { pinId })}
+            />
+          ) : null}
+
           {/* 카테고리 chip 필터 — 등장한 카테고리만 노출 */}
           {visibleCategories.length > 1 && (
             <ScrollView
@@ -383,7 +410,8 @@ export default function PlayDetailScreen() {
               ))}
             </ScrollView>
           )}
-          {filteredPins.map(pin => {
+
+          {viewMode === 'timeline' && filteredPins.map(pin => {
             const author = memberMap.get(pin.authorId);
             return (
               <PinCard
@@ -747,6 +775,33 @@ const styles = StyleSheet.create({
     color: colors.secondary,
   },
   categoryChipTextActive: {
+    color: colors.foreground,
+  },
+  viewModeTabs: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+  },
+  viewModeTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radius.full,
+  },
+  viewModeTabActive: {
+    backgroundColor: colors.brand,
+  },
+  viewModeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.secondary,
+  },
+  viewModeTextActive: {
     color: colors.foreground,
   },
   emptyState: {

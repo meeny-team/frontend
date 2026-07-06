@@ -29,6 +29,8 @@ interface BackendPinResponse {
   title: string;
   memo: string | null;
   location: string | null;
+  latitude: number | null;
+  longitude: number | null;
   images: string[] | null;
   settlement: BackendSettlement;
   splits: BackendSplit[];
@@ -45,6 +47,8 @@ function mapPin(b: BackendPinResponse): Pin {
     title: b.title,
     memo: b.memo ?? undefined,
     location: b.location ?? undefined,
+    latitude: b.latitude ?? undefined,
+    longitude: b.longitude ?? undefined,
     images: b.images ?? undefined,
     settlement: {
       type: b.settlement.type.toLowerCase() as 'equal' | 'custom',
@@ -66,6 +70,8 @@ function toBackendBody(
   if (req.title !== undefined) body.title = req.title;
   if (req.memo !== undefined) body.memo = req.memo;
   if (req.location !== undefined) body.location = req.location;
+  if (req.latitude !== undefined) body.latitude = req.latitude;
+  if (req.longitude !== undefined) body.longitude = req.longitude;
   if (req.images !== undefined) body.images = req.images;
   if (req.settlement !== undefined) {
     body.settlement = {
