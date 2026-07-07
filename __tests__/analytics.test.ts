@@ -30,7 +30,7 @@ let resetUser: typeof import('../src/analytics').resetUser;
 let fetchMock: jest.Mock;
 
 beforeEach(() => {
-  (globalThis as { __DEV__: boolean }).__DEV__ = false;
+  (globalThis as unknown as { __DEV__: boolean }).__DEV__ = false;
   fetchMock = jest.fn().mockResolvedValue({ ok: true });
   (globalThis as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
   const mod = require('../src/analytics');
@@ -40,7 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  (globalThis as { __DEV__: boolean }).__DEV__ = true;
+  (globalThis as unknown as { __DEV__: boolean }).__DEV__ = true;
 });
 
 describe('captureEvent', () => {
@@ -91,6 +91,6 @@ describe('captureEvent', () => {
     fetchMock.mockRejectedValueOnce(new Error('network down'));
     expect(() => captureEvent('crew_create')).not.toThrow();
     // catch 가 붙어 있어 unhandled rejection 도 없어야 함
-    await new Promise(r => setImmediate(r));
+    await new Promise<void>(r => setImmediate(() => r()));
   });
 });
