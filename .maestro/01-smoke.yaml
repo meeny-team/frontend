@@ -1,0 +1,20 @@
+appId: com.meeny.app
+name: smoke - guest login to home
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+
+- assertVisible: "Meeny"
+- assertVisible: "같은 돈, 다른 소비"
+- assertVisible:
+    id: "login-guest"
+
+- tapOn:
+    id: "login-guest"
+
+- extendedWaitUntil:
+    visible: "내 크루"
+    timeout: 15000

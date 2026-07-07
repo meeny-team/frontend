@@ -1,0 +1,16 @@
+appId: com.meeny.app
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+
+- runFlow:
+    when:
+      visible:
+        id: "login-guest"
+    commands:
+      - tapOn:
+          id: "login-guest"
+      - extendedWaitUntil:
+          visible: "내 크루"
+          timeout: 15000

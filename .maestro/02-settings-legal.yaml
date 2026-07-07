@@ -1,0 +1,39 @@
+appId: com.meeny.app
+name: settings - legal navigation
+tags:
+  - navigation
+---
+- runFlow: shared/guest-login.yaml
+
+- tapOn:
+    id: "home-settings-btn"
+
+- extendedWaitUntil:
+    visible: "설정"
+    timeout: 10000
+- assertVisible: "이용약관"
+- assertVisible: "개인정보 처리방침"
+- assertVisible: "로그아웃"
+- assertVisible: "둘러보기 모드"
+- assertVisible: "정식 로그인하기"
+
+- tapOn: "이용약관"
+- extendedWaitUntil:
+    visible: "이용약관"
+    timeout: 5000
+- tapOn:
+    point: "8%,10%"
+
+- assertVisible: "설정"
+- tapOn: "개인정보 처리방침"
+- extendedWaitUntil:
+    visible: "개인정보 처리방침"
+    timeout: 5000
+- tapOn:
+    point: "8%,10%"
+
+- assertVisible: "설정"
+- tapOn:
+    point: "8%,10%"
+
+- assertVisible: "내 크루"

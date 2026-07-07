@@ -1,0 +1,39 @@
+appId: com.meeny.app
+name: crew - create new crew
+tags:
+  - crew
+---
+- runFlow: shared/guest-login.yaml
+
+- runFlow:
+    when:
+      visible:
+        id: "home-empty-create-btn"
+    commands:
+      - tapOn:
+          id: "home-empty-create-btn"
+
+- runFlow:
+    when:
+      notVisible: "새 크루"
+    commands:
+      - tapOn:
+          id: "home-add-crew-btn"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          point: "50%,51%"
+
+- extendedWaitUntil:
+    visible: "새 크루"
+    timeout: 8000
+
+- tapOn: "크루 이름"
+- inputText: "Maestro E2E Crew"
+
+- assertVisible: "완료"
+- tapOn: "완료"
+
+- extendedWaitUntil:
+    visible: "내 크루"
+    timeout: 10000
