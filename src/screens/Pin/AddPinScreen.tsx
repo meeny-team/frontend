@@ -3,7 +3,7 @@
  * 온보딩 퍼널 스타일 핀 추가
  */
 
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   Animated,
-  Dimensions,
   Alert,
   ActivityIndicator,
   Modal,
@@ -21,7 +20,7 @@ import {
 import { pickImage } from '../../utils/imagePicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import Svg, { Line, Polyline, Circle, Path } from 'react-native-svg';
+import { XIcon, ChevronLeftIcon, CheckIcon, SearchIcon, MapPinIcon } from './AddPinIcons';
 // Map removed due to New Architecture compatibility issues
 // import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 // import Geolocation from '@react-native-community/geolocation';
@@ -32,64 +31,19 @@ import {
   PinCategory,
   Play,
   fetchPlayById,
-  createPin,
-  uploadPickedImage,
   PickedImageAsset,
 } from '../../api';
-import { searchPlaces, KakaoPlace } from '../../api/kakao';
+import { useAddPinSubmit } from './useAddPinSubmit';
+import { KakaoPlace } from '../../api/kakao';
+import { usePlaceSearch } from './usePlaceSearch';
+import { useStepAnimation } from './useStepAnimation';
 import { useAuth } from '../../auth/Auth';
 import { captureEvent } from '../../analytics';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'AddPin'>;
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TOTAL_STEPS = 2;
-
-// ============ Icons ============
-
-function XIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={colors.foreground} strokeWidth={2}>
-      <Line x1="18" y1="6" x2="6" y2="18" />
-      <Line x1="6" y1="6" x2="18" y2="18" />
-    </Svg>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={colors.foreground} strokeWidth={2}>
-      <Polyline points="15 18 9 12 15 6" />
-    </Svg>
-  );
-}
-
-function CheckIcon({ color = colors.foreground, size = 16 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3}>
-      <Polyline points="20 6 9 17 4 12" />
-    </Svg>
-  );
-}
-
-function SearchIcon({ color = colors.foreground }: { color?: string }) {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
-      <Circle cx="11" cy="11" r="8" />
-      <Line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </Svg>
-  );
-}
-
-function MapPinIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={colors.tertiary} strokeWidth={2}>
-      <Path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <Circle cx="12" cy="10" r="3" />
-    </Svg>
-  );
-}
 
 const PIN_CATEGORIES: PinCategory[] = ['food', 'cafe', 'shopping', 'transport', 'stay', 'activity'];
 
@@ -121,7 +75,6 @@ export default function AddPinScreen() {
   }, [playId]);
 
   // Form state
-  const [step, setStep] = useState(1);
   const [category, setCategory] = useState<PinCategory | null>(null);
   const [customCategory, setCustomCategory] = useState('');
   const [title, setTitle] = useState('');
@@ -131,9 +84,9 @@ export default function AddPinScreen() {
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string>(myId);
   const [participants, setParticipants] = useState<Set<string>>(new Set());
-  // 선택한 이미지 자산 (최대 MAX_IMAGES). createPin 호출 시 모두 업로드되어 publicUrl 로 변환된다.
+  // 선택한 이미지 자산 (최대 MAX_IMAGES). submit 시 모두 업로드되어 publicUrl 로 변환된다.
   const [pickedAssets, setPickedAssets] = useState<PickedImageAsset[]>([]);
-  const [submitting, setSubmitting] = useState(false);
+  const { submitting, submit: submitPin } = useAddPinSubmit();
 
   // play 가 로드되면 모든 멤버를 분담자 기본 선택
   useEffect(() => {
@@ -143,23 +96,14 @@ export default function AddPinScreen() {
   const [settlementType, setSettlementType] = useState<'equal' | 'custom'>('equal');
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
 
-  // Place search state
-  const [showLocationModal, setShowLocationModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<KakaoPlace[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  // Place search modal 상태는 별도 훅. 모달 열림/쿼리/결과/스피너 관리
+  const placeSearch = usePlaceSearch();
 
-  // Animation
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: step,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [step, progressAnim]);
+  // Step 진행 + 슬라이드/progress 애니메이션은 별도 훅
+  const { step, slideAnim, progressAnim, next: goNext, back: goBack } = useStepAnimation({
+    totalSteps: TOTAL_STEPS,
+    onExitFirstStep: () => navigation.goBack(),
+  });
 
   // Amount parsing
   const numericAmount = parseInt(amount.replace(/,/g, ''), 10) || 0;
@@ -204,36 +148,15 @@ export default function AddPinScreen() {
     }));
   };
 
-  // Place search on button press
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-    const results = await searchPlaces(searchQuery);
-    setSearchResults(results);
-    setIsSearching(false);
-  }, [searchQuery]);
-
   const handleSelectPlace = (place: KakaoPlace) => {
     setSelectedPlace(place);
     setLocationName(place.name);
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowLocationModal(false);
+    placeSearch.closeAndReset();
   };
 
   const handleClearPlace = () => {
     setSelectedPlace(null);
     setLocationName('');
-  };
-
-  const openLocationSearch = () => {
-    setSearchQuery('');
-    setSearchResults([]);
-    setShowLocationModal(true);
   };
 
   const selectedParticipants = members.filter(m => m && participants.has(m.id));
@@ -247,43 +170,8 @@ export default function AddPinScreen() {
     }, 0);
   }, [customSplits, participants]);
 
-  const handleNext = () => {
-    if (step < TOTAL_STEPS) {
-      Animated.timing(slideAnim, {
-        toValue: -SCREEN_WIDTH,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => {
-        setStep(step + 1);
-        slideAnim.setValue(SCREEN_WIDTH);
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      });
-    }
-  };
-
-  const handleBack = () => {
-    if (step > 1) {
-      Animated.timing(slideAnim, {
-        toValue: SCREEN_WIDTH,
-        duration: 200,
-        useNativeDriver: true,
-      }).start(() => {
-        setStep(step - 1);
-        slideAnim.setValue(-SCREEN_WIDTH);
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-      });
-    } else {
-      navigation.goBack();
-    }
-  };
+  const handleNext = goNext;
+  const handleBack = goBack;
 
   // 이미지 선택: 남은 슬롯만큼 multi-select. uri/type/fileName 만 보관하고 업로드는 제출 시점.
   const handlePickImages = useCallback(() => {
@@ -312,60 +200,32 @@ export default function AddPinScreen() {
   }, []);
 
   const handleCreate = async () => {
-    if (!category || submitting) return;
+    if (!category) return;
 
-    setSubmitting(true);
+    const splits = selectedParticipants.map(m => ({
+      userId: m!.id,
+      amount: settlementType === 'equal'
+        ? equalSplitAmount
+        : parseInt((customSplits[m!.id] || '0').replace(/,/g, ''), 10) || 0,
+    }));
 
-    let imageUrls: string[] | undefined;
-    if (pickedAssets.length > 0) {
-      try {
-        imageUrls = await Promise.all(pickedAssets.map(a => uploadPickedImage(a, 'PIN')));
-      } catch (e) {
-        setSubmitting(false);
-        const msg = e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.';
-        Alert.alert('업로드 실패', msg);
-        return;
-      }
-    }
+    const ok = await submitPin({
+      playId,
+      amount: numericAmount,
+      category,
+      title,
+      memo,
+      locationName,
+      latitude: selectedPlace?.latitude,
+      longitude: selectedPlace?.longitude,
+      paidBy,
+      settlementType,
+      splits,
+      pickedAssets,
+    });
 
-    try {
-      const splits = selectedParticipants.map(m => ({
-        userId: m!.id,
-        amount: settlementType === 'equal'
-          ? equalSplitAmount
-          : parseInt((customSplits[m!.id] || '0').replace(/,/g, ''), 10) || 0,
-      }));
-
-      await createPin({
-        playId,
-        amount: numericAmount,
-        category,
-        title: title.trim(),
-        memo: memo.trim() || undefined,
-        location: locationName.trim() || undefined,
-        // 카카오 place 를 고른 경우에만 좌표를 함께 보낸다. 텍스트로만 입력한 위치는 지도 마커에서 제외.
-        latitude: selectedPlace?.latitude,
-        longitude: selectedPlace?.longitude,
-        images: imageUrls,
-        settlement: {
-          type: settlementType,
-          paidBy,
-          splits,
-        },
-      });
-      captureEvent('pin_create', {
-        category,
-        settlement_type: settlementType,
-        split_count: splits.length,
-        has_location: !!locationName.trim(),
-        has_coordinates: !!selectedPlace,
-        image_count: imageUrls?.length ?? 0,
-      });
+    if (ok) {
       navigation.goBack();
-    } catch {
-      Alert.alert('오류', '핀 생성에 실패했습니다.');
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -501,7 +361,7 @@ export default function AddPinScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity style={styles.addLocationButton} onPress={openLocationSearch}>
+        <TouchableOpacity style={styles.addLocationButton} onPress={placeSearch.open}>
           <MapPinIcon />
           <Text style={styles.addLocationText}>위치 추가</Text>
         </TouchableOpacity>
@@ -514,14 +374,14 @@ export default function AddPinScreen() {
   // Location Search Modal
   const renderLocationModal = () => (
     <Modal
-      visible={showLocationModal}
+      visible={placeSearch.showModal}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={() => setShowLocationModal(false)}
+      onRequestClose={placeSearch.closeAndReset}
     >
       <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
         <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => setShowLocationModal(false)}>
+          <TouchableOpacity onPress={placeSearch.closeAndReset}>
             <Text style={styles.modalCancel}>취소</Text>
           </TouchableOpacity>
           <Text style={styles.modalTitle}>위치 검색</Text>
@@ -533,14 +393,14 @@ export default function AddPinScreen() {
             style={styles.modalSearchInput}
             placeholder="장소, 상호명 검색"
             placeholderTextColor={colors.muted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
+            value={placeSearch.query}
+            onChangeText={placeSearch.setQuery}
+            onSubmitEditing={placeSearch.runSearch}
             returnKeyType="search"
             autoFocus
           />
-          <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
-            {isSearching ? (
+          <TouchableOpacity onPress={placeSearch.runSearch} style={styles.searchButton}>
+            {placeSearch.isSearching ? (
               <ActivityIndicator size="small" color={colors.foreground} />
             ) : (
               <SearchIcon />
@@ -549,7 +409,7 @@ export default function AddPinScreen() {
         </View>
 
         <ScrollView style={styles.modalResults}>
-          {searchResults.map(place => (
+          {placeSearch.results.map(place => (
             <TouchableOpacity
               key={place.id}
               style={styles.modalResultItem}
