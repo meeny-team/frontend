@@ -5,6 +5,7 @@
  *  - 인증이 필요한 호출은 자동으로 session 의 accessToken 을 첨부
  *  - 401 응답 시 refreshSession 을 통해 새 토큰을 받아 한 번 재시도
  *  - refresh 자체가 실패하면 session 비우고 onSessionExpired 알림
+ *  - AbortController 로 요청 타임아웃 (기본 15s) — 3G/지하철 환경 무한 hang 방지
  */
 
 import { API_BASE_URL } from '../config';
@@ -37,11 +38,17 @@ export class AuthApiError extends Error {
   }
 }
 
+export const DEFAULT_TIMEOUT_MS = 15_000;
+// 타임아웃 도달 시 AuthApiError 로 표준화 — 화면에서는 code 로 분기 가능
+export const TIMEOUT_ERROR_CODE = 'REQUEST_TIMEOUT';
+
 export interface RequestOptions {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
   // auth=false 인 호출(로그인/리프레시/로그아웃)은 access token 첨부도, 401 자동 refresh 도 적용 안 됨.
   auth?: boolean;
+  // 밀리초. 지정 안 하면 DEFAULT_TIMEOUT_MS.
+  timeoutMs?: number;
 }
 
 async function rawFetch(
@@ -49,14 +56,56 @@ async function rawFetch(
   method: string,
   body: unknown,
   accessToken: string | null,
+  timeoutMs: number,
 ): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  return fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  return fetchWithTimeout(
+    `${API_BASE_URL}${path}`,
+    {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    },
+    timeoutMs,
+  );
+}
+
+/**
+ * fetch + AbortController 조합. 타임아웃 도달 시 요청 취소하고 AuthApiError(REQUEST_TIMEOUT) 던짐.
+ * 외부 (uploads.ts 등) 에서도 재사용할 수 있게 export.
+ */
+export async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    // AbortController.abort() 는 fetch 를 AbortError 로 reject. RN 에서 name 만 신뢰 가능.
+    if (isAbortError(err)) {
+      throw new AuthApiError(
+        TIMEOUT_ERROR_CODE,
+        `요청이 ${Math.round(timeoutMs / 1000)}초 안에 완료되지 않았습니다.`,
+        0,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isAbortError(err: unknown): boolean {
+  return (
+    typeof err === 'object'
+    && err !== null
+    && 'name' in err
+    && (err as { name: unknown }).name === 'AbortError'
+  );
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {
@@ -85,13 +134,14 @@ export function registerRefreshFn(fn: RefreshFn): void {
 
 export async function request<T>(path: string, init: RequestOptions): Promise<T> {
   const auth = init.auth ?? true;
+  const timeoutMs = init.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   if (!auth) {
-    const res = await rawFetch(path, init.method, init.body, null);
+    const res = await rawFetch(path, init.method, init.body, null, timeoutMs);
     return parseResponse<T>(res);
   }
 
-  let res = await rawFetch(path, init.method, init.body, getAccessToken());
+  let res = await rawFetch(path, init.method, init.body, getAccessToken(), timeoutMs);
   if (res.status !== 401) {
     return parseResponse<T>(res);
   }
@@ -104,7 +154,7 @@ export async function request<T>(path: string, init: RequestOptions): Promise<T>
   // 401 → refresh 시도. session.refreshSession 이 in-flight promise 를 공유해 백엔드 refresh 호출은 한 번만.
   try {
     const issued = await refreshSession(registeredRefreshFn);
-    res = await rawFetch(path, init.method, init.body, issued.accessToken);
+    res = await rawFetch(path, init.method, init.body, issued.accessToken, timeoutMs);
     return parseResponse<T>(res);
   } catch {
     await clearSession();

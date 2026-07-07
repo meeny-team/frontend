@@ -13,6 +13,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   AuthApiError,
+  DEFAULT_TIMEOUT_MS,
+  TIMEOUT_ERROR_CODE,
+  fetchWithTimeout,
   registerRefreshFn,
   request,
 } from '../../src/api/http';
@@ -169,5 +172,64 @@ describe('request - 401 자동 refresh 재시도', () => {
 
     expect(refreshFn).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('request - 타임아웃', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('DEFAULT_TIMEOUT_MS 는 15초', () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(15_000);
+  });
+
+  test('fetch 가 taimeoutMs 안에 반환하지 않으면 REQUEST_TIMEOUT + AbortSignal.aborted', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => {
+      capturedSignal = init.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        // AbortController.abort() 는 fetch 를 AbortError 로 reject
+        (init.signal as AbortSignal).addEventListener('abort', () => {
+          const err = new Error('aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      });
+    });
+
+    const promise = request('/api/slow', { method: 'GET', auth: false, timeoutMs: 5_000 });
+    // 타이머 진행
+    jest.advanceTimersByTime(5_000);
+
+    await expect(promise).rejects.toMatchObject({
+      code: TIMEOUT_ERROR_CODE,
+      status: 0,
+    });
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  test('타임아웃 전에 응답 오면 정상 반환 (타이머 clearTimeout)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, { success: true, data: { ok: 1 } }),
+    );
+    const result = await request<{ ok: number }>('/api/fast', {
+      method: 'GET',
+      auth: false,
+      timeoutMs: 10_000,
+    });
+    expect(result).toEqual({ ok: 1 });
+    // pending timer 는 실행되면 안 됨 — abort 가 걸리지 않았어야 함
+    jest.advanceTimersByTime(10_000);
+  });
+
+  test('fetchWithTimeout 은 non-abort 에러는 그대로 throw', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(
+      fetchWithTimeout('https://x/test', { method: 'GET' }, 1_000),
+    ).rejects.toThrow('network down');
   });
 });
