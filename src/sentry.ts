@@ -42,3 +42,22 @@ Sentry.init({
     return breadcrumb;
   },
 });
+
+/**
+ * Sentry user context 를 세션 상태와 동기화한다.
+ *
+ * - id 만 첨부 (email/nickname 은 PII 정책상 제외)
+ * - is_guest 태그로 게스트 공유 계정 이벤트를 필터링할 수 있게 함
+ * - null 이면 클리어 — 로그아웃/세션 만료 시 이전 사용자로 잘못 붙지 않도록
+ *
+ * AuthProvider 의 로그인/로그아웃/세션만료 훅에서 호출한다.
+ */
+export function setSentryUser(id: string | number | null, isGuest = false): void {
+  if (id === null || id === undefined) {
+    Sentry.setUser(null);
+    Sentry.setTag('is_guest', null);
+    return;
+  }
+  Sentry.setUser({ id: String(id) });
+  Sentry.setTag('is_guest', isGuest ? 'true' : 'false');
+}
