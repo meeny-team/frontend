@@ -1,11 +1,16 @@
 /**
  * Meeny - Main Navigation
  *
- * 딥링크: meeny://invite/{code}
- *  - 인증 완료 후에만 라우팅 (NavigationContainer 의 linking config)
- *  - Home 라우트에 inviteCode 를 params 로 주입; HomeScreen 이 그것을 보고 자동 join 시도
- *  - 네이티브 등록 필수: iOS Info.plist 의 CFBundleURLTypes 와 Android
- *    AndroidManifest.xml 의 intent-filter (별도 진행)
+ * 딥링크 지원 URL:
+ *   - meeny://invite/{code}                       — 커스텀 스킴 (fallback)
+ *   - https://meeny.store/invite/{code}           — Universal / App Links
+ *   - https://www.meeny.store/invite/{code}       — Universal / App Links (www)
+ *
+ * 네이티브 등록:
+ *   - iOS  Info.plist CFBundleURLTypes ('meeny') + MeenyApp.entitlements (applinks)
+ *   - Android AndroidManifest.xml intent-filter (scheme=meeny + https autoVerify)
+ *   - 서버쪽 파일: /.well-known/apple-app-site-association + /.well-known/assetlinks.json
+ *     (docs/deeplinks.md 참고)
  */
 
 import React from 'react';
@@ -17,11 +22,15 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { colors } from '../design';
 
 const linking: LinkingOptions<AuthorizedStackParamList> = {
-  prefixes: ['meeny://'],
+  prefixes: [
+    'meeny://',
+    'https://meeny.store',
+    'https://www.meeny.store',
+  ],
   config: {
     screens: {
       Home: {
-        // meeny://invite/CODE → Home { inviteCode: "CODE" }
+        // meeny://invite/CODE 또는 https://meeny.store/invite/CODE → Home { inviteCode: "CODE" }
         path: 'invite/:inviteCode',
         parse: { inviteCode: (v: string) => v.toUpperCase() },
       },

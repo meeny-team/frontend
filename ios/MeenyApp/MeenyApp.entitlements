@@ -6,5 +6,16 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!--
+		Universal Links.
+		해당 도메인 루트에 /.well-known/apple-app-site-association 를 서빙해야 함
+		(docs/deeplinks.md 참고).
+		앱 심사 대상 도메인은 meeny.store 로 사용 (config.ts 의 PROD_API_BASE_URL 과 동일 등록업체).
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:meeny.store</string>
+		<string>applinks:www.meeny.store</string>
+	</array>
 </dict>
 </plist>
