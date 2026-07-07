@@ -38,6 +38,7 @@ import {
 } from '../../api';
 import { searchPlaces, KakaoPlace } from '../../api/kakao';
 import { useAuth } from '../../auth/Auth';
+import { captureEvent } from '../../analytics';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'AddPin'>;
@@ -351,6 +352,14 @@ export default function AddPinScreen() {
           paidBy,
           splits,
         },
+      });
+      captureEvent('pin_create', {
+        category,
+        settlement_type: settlementType,
+        split_count: splits.length,
+        has_location: !!locationName.trim(),
+        has_coordinates: !!selectedPlace,
+        image_count: imageUrls?.length ?? 0,
       });
       navigation.goBack();
     } catch {

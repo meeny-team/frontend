@@ -7,7 +7,11 @@
  */
 
 import { Platform } from 'react-native';
-import { SENTRY_DSN as ENV_SENTRY_DSN } from '@env';
+import {
+  SENTRY_DSN as ENV_SENTRY_DSN,
+  POSTHOG_KEY as ENV_POSTHOG_KEY,
+  POSTHOG_HOST as ENV_POSTHOG_HOST,
+} from '@env';
 
 const PROD_API_BASE_URL = 'https://api.meeny.store';
 
@@ -32,3 +36,8 @@ export const GOOGLE_WEB_CLIENT_ID =
 // Sentry DSN — .env 의 SENTRY_DSN 를 빌드타임에 주입 (react-native-dotenv).
 // 비어 있으면 sentry.ts 가 자동으로 비활성화. 환경별로 다른 DSN 쓰고 싶으면 .env 만 갈아끼우면 됨.
 export const SENTRY_DSN = ENV_SENTRY_DSN ?? '';
+
+// PostHog — .env 의 POSTHOG_KEY 를 빌드타임에 주입. 비어 있으면 analytics 모듈이 자동 no-op.
+// HOST 는 EU 클라우드 / self-hosted 등 위치별로 다름. 미지정 시 US 기본.
+export const POSTHOG_KEY = ENV_POSTHOG_KEY ?? '';
+export const POSTHOG_HOST = ENV_POSTHOG_HOST ?? 'https://us.i.posthog.com';

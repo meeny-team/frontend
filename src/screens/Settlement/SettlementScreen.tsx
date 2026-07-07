@@ -41,6 +41,7 @@ import {
   PinTransfer,
 } from '../../api';
 import { useAuth } from '../../auth/Auth';
+import { captureEvent } from '../../analytics';
 import { AuthorizedStackParamList } from '../../navigation/AuthorizedStack';
 
 type RouteProps = RouteProp<AuthorizedStackParamList, 'Settlement'>;
@@ -204,6 +205,7 @@ export default function SettlementScreen() {
               return;
             }
             setSettlement(res.data);
+            captureEvent('settlement_close', { forced: true });
             Alert.alert('정산 마감 완료', '정산이 강제 마감되었습니다.');
           },
         },
@@ -236,6 +238,7 @@ export default function SettlementScreen() {
               return;
             }
             setSettlement(res.data);
+            captureEvent('settlement_close', { forced: false });
             Alert.alert('정산 마감 완료', '정산이 마감되었습니다.');
           },
         },
@@ -382,6 +385,7 @@ export default function SettlementScreen() {
     }
     try {
       await Share.share({ message });
+      captureEvent('settlement_share', { has_bank_info: !!(bankLabel && accountNumber) });
     } catch {
       // 사용자가 취소한 경우 등 — 조용히 무시
     }

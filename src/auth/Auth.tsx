@@ -34,6 +34,7 @@ import {
   setOnSessionExpired,
 } from './session';
 import { setSentryUser } from '../sentry';
+import { captureEvent, identifyUser, resetUser } from '../analytics';
 
 interface AuthContextType {
   user: MemberProfile | User | null;
@@ -63,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setIsGuest(false);
       setSentryUser(null);
+      resetUser();
     });
 
     (async () => {
@@ -74,6 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const guest = isGuestSession();
           setIsGuest(guest);
           setSentryUser(me.id, guest);
+          identifyUser(me.id, guest);
         } catch {
           // 토큰이 만료되었고 자동 refresh 까지 실패한 경우. session 은 이미 비워져 있음.
         }
@@ -86,12 +89,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 로그인 직후 공통 후처리: 토큰 영속화 → 사용자 프로필 호출
   // (saveTokens 가 먼저여야 fetchMe 가 자동으로 새 토큰을 첨부할 수 있다)
-  const completeLogin = async (issued: TokenResponse, asGuest = false) => {
+  const completeLogin = async (
+    issued: TokenResponse,
+    provider: 'GOOGLE' | 'KAKAO' | 'APPLE' | 'GUEST',
+  ) => {
+    const asGuest = provider === 'GUEST';
     await saveTokens(issued, asGuest);
     setIsGuest(asGuest);
     const me = await fetchMe();
     setUser(me);
     setSentryUser(me.id, asGuest);
+    identifyUser(me.id, asGuest);
+    captureEvent('login_success', { provider });
   };
 
   const loginWithGoogle = async () => {
@@ -105,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Google ID token 을 받지 못했습니다.');
       }
       const issued = await socialLogin('GOOGLE', idToken);
-      await completeLogin(issued);
+      await completeLogin(issued, 'GOOGLE');
     } catch (err) {
       if (
         (err as { code?: string })?.code === statusCodes.SIGN_IN_CANCELLED ||
@@ -126,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const kakao = await kakaoLogin();
       const issued = await socialLogin('KAKAO', kakao.accessToken);
-      await completeLogin(issued);
+      await completeLogin(issued, 'KAKAO');
     } catch (err) {
       const msg = (err as { message?: string })?.message ?? '';
       if (msg.includes('user cancelled') || msg.includes('canceled')) {
@@ -159,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? `${fullName.familyName ?? ''}${fullName.givenName}`.trim()
         : undefined;
       const issued = await socialLogin('APPLE', identityToken, nickname);
-      await completeLogin(issued);
+      await completeLogin(issued, 'APPLE');
     } catch (err) {
       if ((err as { code?: string })?.code === appleAuth.Error.CANCELED) {
         return;
@@ -177,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // "둘러보기": 백엔드 공유 데모 계정으로 자동 로그인. 실제 토큰을 받아오므로 이후 모든 API 호출이 정상 동작.
     try {
       const issued = await guestLogin();
-      await completeLogin(issued, true);
+      await completeLogin(issued, 'GUEST');
     } catch (err) {
       if (err instanceof AuthApiError) {
         console.warn('[auth] guest login backend rejected:', err.code, err.message);
@@ -213,6 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setIsGuest(false);
     setSentryUser(null);
+    resetUser();
   };
 
   return (

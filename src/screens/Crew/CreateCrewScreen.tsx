@@ -22,6 +22,7 @@ import { pickImage } from '../../utils/imagePicker';
 import Svg, { Line, Circle } from 'react-native-svg';
 import { colors, spacing } from '../../design';
 import { createCrew, uploadPickedImage, PickedImageAsset } from '../../api';
+import { captureEvent } from '../../analytics';
 
 // ============ Icons (메모이제이션) ============
 
@@ -123,6 +124,7 @@ export default function CreateCrewScreen() {
       });
 
       if (response.status === 200) {
+        captureEvent('crew_create', { has_cover_image: !!coverImage });
         navigation.goBack();
       } else {
         Alert.alert('오류', response.message || '크루 생성에 실패했습니다.');
