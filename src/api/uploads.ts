@@ -9,7 +9,10 @@
  * 그대로 반환 — 재업로드 안 함.
  */
 
-import { request } from './http';
+import { fetchWithTimeout, request } from './http';
+
+// presigned PUT 은 파일 크기 + 회선 상태에 따라 오래 걸릴 수 있어 별도 상한.
+const PRESIGNED_PUT_TIMEOUT_MS = 60_000;
 
 export type UploadPurpose = 'PROFILE' | 'CREW' | 'PLAY' | 'PIN';
 
@@ -55,11 +58,15 @@ export async function uploadPickedImage(
     ? rawBlob
     : new Blob([rawBlob], { type: presigned.contentType, lastModified: Date.now() });
 
-  const putResponse = await fetch(presigned.uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': presigned.contentType },
-    body,
-  });
+  const putResponse = await fetchWithTimeout(
+    presigned.uploadUrl,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': presigned.contentType },
+      body,
+    },
+    PRESIGNED_PUT_TIMEOUT_MS,
+  );
 
   if (!putResponse.ok) {
     // S3 의 403/4xx 본문에는 <Code>SignatureDoesNotMatch</Code> 같은 진단 정보가 들어 있음
