@@ -22,6 +22,26 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+
+        <!-- 커스텀 스킴 fallback — 다른 앱 (KakaoTalk 공유 등) 이 https 링크를 앱으로 -->
+        <!-- 열지 못하는 케이스를 커버. 정상적으로는 아래 App Links (autoVerify) 를 사용. -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="meeny" android:host="invite" />
+        </intent-filter>
+
+        <!-- Android App Links (autoVerify=true) —
+             /.well-known/assetlinks.json 을 도메인 루트에 배포하면 시스템이 자동 검증해
+             https 링크가 브라우저를 거치지 않고 앱에서 바로 열린다. docs/deeplinks.md 참고. -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="meeny.store" android:pathPrefix="/invite/" />
+            <data android:scheme="https" android:host="www.meeny.store" android:pathPrefix="/invite/" />
+        </intent-filter>
       </activity>
 
       <!-- 카카오 SDK가 카카오톡 미설치 단말에서 카카오계정 웹 로그인 후 앱으로 돌아올 때 사용하는 deep link.

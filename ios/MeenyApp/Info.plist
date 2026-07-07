@@ -38,6 +38,18 @@
 				<string>kakao4d40392ebab5c4c6c28a02ea8461ec2b</string>
 			</array>
 		</dict>
+		<!-- 커스텀 스킴: 다른 앱/브라우저가 apple-app-site-association 파일을 캐시하지 못한 -->
+		<!-- 경우의 fallback. 웹에서 오는 정상 링크는 아래 Associated Domains(Universal Links)를 사용. -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>store.meeny.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>meeny</string>
+			</array>
+		</dict>
 	</array>
 	<key>KAKAO_APP_KEY</key>
 	<string>4d40392ebab5c4c6c28a02ea8461ec2b</string>
