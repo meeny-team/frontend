@@ -1,0 +1,26 @@
+appId: com.meeny.app
+name: play - enter create play wizard
+tags:
+  - play
+---
+- runFlow: shared/guest-login.yaml
+
+- extendedWaitUntil:
+    visible: "내 크루"
+    timeout: 10000
+
+- tapOn:
+    id: "home-crew-card-.*"
+    index: 0
+
+- extendedWaitUntil:
+    visible: "새 플레이"
+    timeout: 10000
+
+- tapOn: "새 플레이"
+
+- extendedWaitUntil:
+    visible: "어떤 플레이인가요?"
+    timeout: 8000
+- assertVisible: "1 / 4"
+- assertVisible: "커버 사진 (선택)"

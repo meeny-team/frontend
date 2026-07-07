@@ -110,25 +110,45 @@ export default function LoginScreen() {
         {/* Login Buttons */}
         <View style={styles.buttonSection}>
           {Platform.OS === 'android' && (
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogle} activeOpacity={0.8}>
+            <TouchableOpacity
+              testID="login-google"
+              style={styles.googleButton}
+              onPress={handleGoogle}
+              activeOpacity={0.8}
+            >
               <GoogleIcon />
               <Text style={styles.googleButtonText}>Google로 시작하기</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.kakaoButton} onPress={handleKakao} activeOpacity={0.8}>
+          <TouchableOpacity
+            testID="login-kakao"
+            style={styles.kakaoButton}
+            onPress={handleKakao}
+            activeOpacity={0.8}
+          >
             <KakaoIcon />
             <Text style={styles.kakaoButtonText}>카카오로 시작하기</Text>
           </TouchableOpacity>
 
           {Platform.OS === 'ios' && (
-            <TouchableOpacity style={styles.appleButton} onPress={handleApple} activeOpacity={0.8}>
+            <TouchableOpacity
+              testID="login-apple"
+              style={styles.appleButton}
+              onPress={handleApple}
+              activeOpacity={0.8}
+            >
               <AppleIcon />
               <Text style={styles.appleButtonText}>Apple로 시작하기</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={styles.guestButton} onPress={handleGuest} activeOpacity={0.7}>
+          <TouchableOpacity
+            testID="login-guest"
+            style={styles.guestButton}
+            onPress={handleGuest}
+            activeOpacity={0.7}
+          >
             <Text style={styles.guestButtonText}>둘러보기</Text>
             <ArrowRightIcon />
           </TouchableOpacity>

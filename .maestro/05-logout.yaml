@@ -1,0 +1,23 @@
+appId: com.meeny.app
+name: settings - logout returns to login
+tags:
+  - auth
+---
+- runFlow: shared/guest-login.yaml
+
+- tapOn:
+    id: "home-settings-btn"
+
+- extendedWaitUntil:
+    visible: "설정"
+    timeout: 10000
+- assertVisible: "로그아웃"
+
+- tapOn: "로그아웃"
+
+- extendedWaitUntil:
+    visible:
+      id: "login-guest"
+    timeout: 10000
+- assertVisible: "Meeny"
+- assertVisible: "같은 돈, 다른 소비"

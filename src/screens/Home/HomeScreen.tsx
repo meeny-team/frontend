@@ -185,7 +185,12 @@ const HeroCrewCard = memo(({ crew, totalAmount, onPress }: HeroCrewCardProps) =>
 
   if (hasImage) {
     return (
-      <TouchableOpacity style={styles.heroCardWrapper} onPress={onPress} activeOpacity={0.9}>
+      <TouchableOpacity
+        testID={`home-crew-card-${crew.id}`}
+        style={styles.heroCardWrapper}
+        onPress={onPress}
+        activeOpacity={0.9}
+      >
         <ImageBackground
           source={{ uri: crew.coverImage }}
           style={styles.heroCard}
@@ -201,6 +206,7 @@ const HeroCrewCard = memo(({ crew, totalAmount, onPress }: HeroCrewCardProps) =>
 
   return (
     <TouchableOpacity
+      testID={`home-crew-card-${crew.id}`}
       style={[styles.heroCardWrapper, styles.heroCard, styles.heroCardNoImage]}
       onPress={onPress}
       activeOpacity={0.9}
@@ -237,7 +243,12 @@ const SmallCrewCard = memo(({ crew, playCount, onPress }: SmallCrewCardProps) =>
 
   if (hasImage) {
     return (
-      <TouchableOpacity style={styles.smallCardWrapper} onPress={onPress} activeOpacity={0.9}>
+      <TouchableOpacity
+        testID={`home-crew-card-${crew.id}`}
+        style={styles.smallCardWrapper}
+        onPress={onPress}
+        activeOpacity={0.9}
+      >
         <ImageBackground
           source={{ uri: crew.coverImage }}
           style={styles.smallCard}
@@ -253,6 +264,7 @@ const SmallCrewCard = memo(({ crew, playCount, onPress }: SmallCrewCardProps) =>
 
   return (
     <TouchableOpacity
+      testID={`home-crew-card-${crew.id}`}
       style={[styles.smallCardWrapper, styles.smallCard, styles.smallCardNoImage]}
       onPress={onPress}
       activeOpacity={0.9}
@@ -357,6 +369,7 @@ export default function HomeScreen() {
         <View style={styles.topBar}>
           <Text style={styles.logo}>meeny</Text>
           <TouchableOpacity
+            testID="home-settings-btn"
             style={styles.settingsBtn}
             onPress={() => navigation.navigate('Settings')}
             activeOpacity={0.7}
@@ -380,6 +393,7 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>내 크루</Text>
             {myCrews.length > 0 && (
               <TouchableOpacity
+                testID="home-add-crew-btn"
                 style={styles.addBtn}
                 onPress={() => setShowAddOptions(true)}
                 activeOpacity={0.7}
@@ -408,6 +422,7 @@ export default function HomeScreen() {
 
               <View style={styles.emptyActions}>
                 <TouchableOpacity
+                  testID="home-empty-create-btn"
                   style={styles.primaryBtn}
                   onPress={() => navigation.navigate('CreateCrew')}
                   activeOpacity={0.8}
@@ -415,6 +430,7 @@ export default function HomeScreen() {
                   <Text style={styles.primaryBtnText}>새 크루 만들기</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  testID="home-empty-join-btn"
                   style={styles.textBtn}
                   onPress={() => setShowJoinModal(true)}
                   activeOpacity={0.6}
@@ -473,6 +489,7 @@ export default function HomeScreen() {
             </View>
 
             <TouchableOpacity
+              testID="home-dialog-create-crew"
               style={styles.dialogOption}
               onPress={() => {
                 setShowAddOptions(false);
@@ -487,6 +504,7 @@ export default function HomeScreen() {
             <View style={styles.dialogDivider} />
 
             <TouchableOpacity
+              testID="home-dialog-join-crew"
               style={styles.dialogOption}
               onPress={() => {
                 setShowAddOptions(false);
