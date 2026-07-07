@@ -33,6 +33,7 @@ import {
   isGuestSession,
   setOnSessionExpired,
 } from './session';
+import { setSentryUser } from '../sentry';
 
 interface AuthContextType {
   user: MemberProfile | User | null;
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOnSessionExpired(() => {
       setUser(null);
       setIsGuest(false);
+      setSentryUser(null);
     });
 
     (async () => {
@@ -69,7 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const me = await fetchMe();
           setUser(me);
-          setIsGuest(isGuestSession());
+          const guest = isGuestSession();
+          setIsGuest(guest);
+          setSentryUser(me.id, guest);
         } catch {
           // 토큰이 만료되었고 자동 refresh 까지 실패한 경우. session 은 이미 비워져 있음.
         }
@@ -87,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(asGuest);
     const me = await fetchMe();
     setUser(me);
+    setSentryUser(me.id, asGuest);
   };
 
   const loginWithGoogle = async () => {
@@ -207,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearSession();
     setUser(null);
     setIsGuest(false);
+    setSentryUser(null);
   };
 
   return (
